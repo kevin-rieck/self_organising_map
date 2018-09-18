@@ -1,18 +1,21 @@
-import tensorflow as tf
-import numpy as np
-from matplotlib import pyplot as plt
-import matplotlib.animation as animation
-import time
-from sklearn import cluster
-from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, manhattan_distances
-from self_organizing_map.utility_funcs import get_watershed, calc_umatrix, remove_border_label
-from sklearn.decomposition import PCA
-from sklearn.manifold import MDS
-from sklearn.ensemble import IsolationForest
-import pandas as pd
 import os
-from collections import Counter
 import sqlite3
+import time
+from collections import Counter
+
+import matplotlib.animation as animation
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from matplotlib import pyplot as plt
+from sklearn import cluster
+from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
+from sklearn.manifold import MDS
+from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, manhattan_distances
+from sklearn.preprocessing import StandardScaler
+
+from self_organizing_map.utility_funcs import get_watershed, calc_umatrix, remove_border_label
 
 
 class SOM(object):
@@ -121,12 +124,12 @@ class SOM(object):
                 # bmu_index = tf.argmin(debug)
 
             elif self.metric == 'cosine':
-                input_1 = tf.nn.l2_normalize(self._weightage_vects, 1)
-                input_2 = tf.nn.l2_normalize(self._vect_input)
+                input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
+                input_2 = tf.nn.l2_normalize(self._vect_input, 0)
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                distance = 1.0 - cosine_similarity
+                # distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
-                bmu_index = tf.argmin(distance)
+                bmu_index = tf.argmax(cosine_similarity)
 
             else:
                 distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
@@ -385,7 +388,7 @@ class SOM(object):
 
     def _get_clusters(self, n_cluster, clustering_method=None, numbers_wanted=True):
         """
-        Performs clustering based on sklearns agglomerative or k-means clustering
+        Performs clustering based on sklearn's agglomerative or k-means clustering
         Saves plot of the clustering using imshow
         :param n_cluster: number of desired clusters
         :param clustering_method: string determining the clustering algorithm, either 'agg', 'kmeans'
@@ -747,13 +750,12 @@ class PLSOM(SOM):
                 bmu_index = tf.argmin(distance)
 
             elif self.metric == 'cosine':
-                input_1 = tf.nn.l2_normalize(self._weightage_vects, 1)
-                input_2 = tf.nn.l2_normalize(self._vect_input)
+                input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
+                input_2 = tf.nn.l2_normalize(self._vect_input, 0)
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                distance = 1.0 - cosine_similarity
-                min_distance = tf.reduce_min(distance)
+                # distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
-                bmu_index = tf.argmin(distance)
+                bmu_index = tf.argmax(cosine_similarity)
 
             else:
                 distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
@@ -939,13 +941,12 @@ class RawDataConverter:
         except IndexError or FileNotFoundError or TypeError:
             print('Check sample numbers (should be iterable) and correctness of path')
 
-    def read_csv(self, path_to_sample, return_norm=True, scale=True, norm='manhattan', scaling='none'):
+    def read_csv(self, path_to_sample, return_norm=True, scale=True, norm='manhattan'):
 
         file_loc = r'{}'.format(path_to_sample)
         df = pd.read_csv(file_loc)
 
-        return self._convert_df(df=df, return_norm=return_norm, scale=scale, norm=norm,
-                                scaling_for_stft_values=scaling)
+        return self._convert_df(df=df, return_norm=return_norm, norm=norm, scaling_before_stft=scale)
 
     def _read_db_in_chunks(self, path_to_db, chunksize):
         assert isinstance(path_to_db, str), 'Path must be str'
@@ -956,19 +957,26 @@ class RawDataConverter:
         df_gen = pd.read_sql_query(query, db, chunksize=chunksize)
 
         print('New generator with chunksize {}'.format(chunksize))
+        print('Path: {}'.format(path_to_db))
 
         for df in df_gen:
             yield self._convert_df(df)
 
-    def _convert_df(self, df, return_norm=True, scale=True, norm='manhattan', scaling_for_stft_values='standard'):
+    def _convert_df(self, df, return_norm=True, norm='manhattan', scaling_before_stft=True):
         if norm not in ['manhattan', 'euclidean'] and return_norm:
             raise ValueError('Norm to use must be manhattan or euclidean')
 
-        if scaling_for_stft_values not in ['minmax', 'standard', 'none']:
-            raise ValueError('Scaling to use must be minmax, standard or none')
-
         for axis in ['x', 'y', 'z']:
             assert axis in df.columns
+
+        if df.isnull().values.any():
+            initial = len(df)
+            df.dropna(inplace=True, axis=0)
+            delta = len(df) - initial
+            print('DF has NaN values. {} lines of {} dropped.'.format(abs(delta), initial))
+
+        if scaling_before_stft:
+            df[['x', 'y', 'z']] = StandardScaler().fit_transform(df[['x', 'y', 'z']])
 
         if return_norm:
             if norm == 'manhattan':
@@ -977,25 +985,13 @@ class RawDataConverter:
             elif norm == 'euclidean':
                 df['norm'] = np.sqrt(df['x']**2 + df['y']**2 + df['z']**2)
 
-            if scale:
-                df['norm'] = (df['norm'] - np.mean(df['norm'], axis=0)) / np.std(df['norm'], axis=0)
-
             spec = plt.specgram(df['norm'], self.nfft, self.sampling_freq, noverlap=self.n_overlap, cmap='Greys')
 
         else:
             spec = plt.specgram(df[self.axis], self.nfft, self.sampling_freq, noverlap=self.n_overlap, cmap='Greys')
 
-        plt.close()
+        plt.show()
         to_return = spec[0].T
-
-        if scaling_for_stft_values == 'minmax':
-            to_return = (to_return - np.min(to_return, axis=0)) / (np.max(to_return, axis=0) - np.min(to_return, axis=0))
-
-        elif scaling_for_stft_values == 'standard':
-            to_return = (to_return - np.mean(to_return, axis=0)) / (np.std(to_return, axis=0))
-
-        elif scaling_for_stft_values is None or scaling_for_stft_values == 'none':
-            pass
 
         return to_return
 
@@ -1228,6 +1224,7 @@ class AutomatonV2:
 
         duration_fig, ax = plt.subplots(n_rows, n_cols)
         axes = ax.ravel()
+        plot_counter = 0
 
         for key, value_as_array in self.state_durations.items():
             value_as_array = np.array(value_as_array, dtype=np.float32)
@@ -1235,16 +1232,16 @@ class AutomatonV2:
             start, end = value_as_array.min(), value_as_array.max()
             x_grid = np.linspace(start, end, 50)[:, None]
             curve = np.exp(kde.score_samples(x_grid))
-            axes[key].plot(curve)
+            axes[plot_counter].plot(curve, label='{}'.format(key))
             # sns.distplot(value_as_array, ax=axes[key], rug=False, kde=True, label='State: {}'.format(int(key)))
-            axes[key].set_xlabel('Timeframe')
-            # axes[key].legend(loc='upper right', fontsize='small')
+            axes[plot_counter].set_xlabel('Timeframe')
+            axes[plot_counter].legend(loc='upper right', fontsize='small')
+            plot_counter += 1
 
         plt.show(duration_fig)
 
     def _generate_kde(self):
         from sklearn.neighbors import KernelDensity
-        from sklearn.model_selection import GridSearchCV
 
         if self.state_durations is None:
             print('Dictionary with individual state durations is None')
@@ -1300,10 +1297,14 @@ class AutomatonV2:
         state_dict = self._get_state_durations(data=data, train=False)
         for key, value in state_dict.items():
             test_min, test_max = min(value), max(value)
-            if test_max > max(self.state_durations[key]):
-                print('State remaining error: Duration of state {} exceeds learned maximum.'.format(key))
-            if test_min < min(self.state_durations[key]):
-                print('Early transition: Duration of state {} smaller than learned minimum'.format(key))
+            try:
+                if test_max > max(self.state_durations[key]):
+                    print('State remaining error: Duration of state {} exceeds learned maximum.'.format(key))
+                if test_min < min(self.state_durations[key]):
+                    print('Early transition: Duration of state {} smaller than learned minimum'.format(key))
+
+            except KeyError:
+                print('No learned maximum times for state {}'.format(key))
 
     def check(self, data):
         self.check_total_state_duration(data)
@@ -1332,7 +1333,7 @@ if __name__ == '__main__':
     atm = AutomatonV2()
     for count, som in enumerate([som1]):
         som.fit(X_train)
-        for db in rdc._get_db_names(r'C:\Users\Apex\Desktop\SensorII'):
+        for db in rdc._get_db_names(r'C:\Users\Apex\Desktop\Kurzversuch_8g'):
             for i in rdc._read_db_in_chunks(path_to_db=db,
                                             chunksize=384000):
                 pred = som.predict(i)
@@ -1340,4 +1341,7 @@ if __name__ == '__main__':
         plt.style.use('ggplot')
         som.plot_state_dependent_qe()
         atm.plot_time_distribution()
+        atm.plot_state_durations()
+        atm.plot_nx_graph()
+        atm.check([0,1,2,3,4,5])
     plt.show(fig)

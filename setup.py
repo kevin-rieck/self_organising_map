@@ -10,6 +10,6 @@ setup(
     author_email='kevin.rieck@fau.de',
     description='Self organizing map for process monitoring',
     install_requires=[
-        'tensorflow>=1', 'numpy', 'matplotlib', 'pandas', 'scikit-learn', 'scipy', 'scikit-image'
+        'tensorflow>=1', 'numpy', 'matplotlib', 'pandas', 'scikit-learn', 'scipy', 'scikit-image', 'networkx'
     ]
 )
