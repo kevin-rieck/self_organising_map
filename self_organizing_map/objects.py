@@ -86,7 +86,7 @@ class SOM(object):
         self.last_bmu_qe = None
         self.state_dependent_qe_dict = {}
         self.clustered_by_watershed = False
-
+        self.colormap = 'magma'
         # INITIALIZE GRAPH
         self._graph = tf.Graph()
 
@@ -321,7 +321,7 @@ class SOM(object):
 
         if plot_wanted:
             qe_map, ax = plt.subplots(1, 1)
-            ax.matshow(qe_matrix, cmap='plasma')
+            ax.matshow(qe_matrix, cmap=self.colormap)
             qe_map.show()
 
         return to_return
@@ -412,7 +412,7 @@ class SOM(object):
         cluster_array = clusterer.labels_.reshape((grid.shape[0], grid.shape[1]))
 
         clustermap, ax = plt.subplots(1, 1)
-        ax.imshow(cluster_array, cmap='plasma')
+        ax.imshow(cluster_array, cmap=self.colormap)
         ax.set_title('Clusters = {}, Epochs = {}, Metric = {}'.format(n_cluster,
                                                                       self._n_iterations, self.metric.capitalize()))
         ax.get_xaxis().set_ticks([])
@@ -448,7 +448,7 @@ class SOM(object):
         self.umatrix = calc_umatrix(self.get_centroids(), dist_func=self.dist_func)
 
         umatrix_plot, ax = plt.subplots(1, 1)
-        ax.imshow(self.umatrix, cmap='Greys', interpolation='none',
+        ax.imshow(self.umatrix, cmap=self.colormap, interpolation='none',
                   vmin=np.min(self.umatrix), vmax=np.max(self.umatrix))
         ax.set_title('{}x{}, Epochs = {}, Metric = {}'.format(self._m, self._n, self._n_iterations,
                                                               self.metric.capitalize()))
@@ -463,22 +463,22 @@ class SOM(object):
 
         return self.umatrix
 
-    def hit_histo(self):
+    def hit_histo(self):  # todo eventuell 3d bar plot
         """
         Plots a hit histogram based on the BMUs of the last predictions and plots it
         :return: None, plots hit histogram
         """
         assert self._last_bmus is not None
-        x = [point[0] for point in self._last_bmus]
-        y = [point[1] for point in self._last_bmus]
+        y = [point[0] for point in self._last_bmus]
+        x = [point[1] for point in self._last_bmus]
         size_array = np.zeros(self.cluster.shape)
         for _x, _y in zip(x, y):
-            size_array[_x][_y] += 1
-        s = size_array[x, y]
+            size_array[_y][_x] += 1
+        s = size_array[y, x]
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        cluster_map = ax.imshow(self.cluster, cmap='plasma')
-        scatter = ax.scatter(x, y, s=s, edgecolors='k', facecolors='none')
+        cluster_map = ax.imshow(self.cluster, cmap=self.colormap)
+        scatter = ax.scatter(x, y, s=s, edgecolors='w', facecolors='k', alpha=0.5)
         plt.show(fig)
 
     def override_clusters(self):
@@ -552,7 +552,7 @@ class SOM(object):
         plt.close()
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        surface = ax.imshow(self.get_umatrix(), cmap='hot', interpolation='bilinear')
+        surface = ax.imshow(self.get_umatrix(), cmap=self.colormap, interpolation='bilinear')
         hits, = ax.plot([], [], marker='o', ls='dashed', markerfacecolor='r', markeredgecolor='none',
                         color='y', markersize=4.0)
         fig.suptitle('BMU trajectory')
@@ -585,7 +585,7 @@ class SOM(object):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
         ax.scatter(components[:, 0], components[:, 1], components[:, 2], marker='o', alpha=0.5,
-                   c=components[:, 3], s=components[:, 4], cmap='plasma')
+                   c=components[:, 3], s=components[:, 4], cmap=self.colormap)
         plt.show(fig)
 
     def show_mds(self):
@@ -637,7 +637,7 @@ class SOM(object):
         if n_plots % 4:
             n_cols += 1
 
-        qe_fig, ax = plt.subplots(n_rows, n_cols)
+        qe_fig, ax = plt.subplots(n_rows, n_cols, figsize=(11.69, 11.69))
         axes = ax.ravel()
         for count, key in enumerate(sorted(self.state_dependent_qe_dict.keys())):
             axes[count].plot(self.state_dependent_qe_dict[key], c='k', marker='o', label='State {}'.format(int(key)))
@@ -753,8 +753,8 @@ class PLSOM(SOM):
                 input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
                 input_2 = tf.nn.l2_normalize(self._vect_input, 0)
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                # distance = 1.0 - cosine_similarity
-                # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
+                distance = 1.0 - tf.abs(cosine_similarity)
+                min_distance = tf.reduce_min(distance)
                 bmu_index = tf.argmax(cosine_similarity)
 
             else:
@@ -1030,6 +1030,7 @@ class AutomatonV2:
         self.state_change_proba = {}
         self.total_durations = {}
         self.state_kde = {}
+        self.colormap = 'magma'
 
     @staticmethod
     def get_transitions(array):
@@ -1157,7 +1158,7 @@ class AutomatonV2:
             probability_matrix[np.where(probability_matrix == np.nan)] = 0
 
             fig, ax = plt.subplots(1, 1)
-            ax.matshow(probability_matrix, cmap='Greys')
+            ax.matshow(probability_matrix, cmap=self.colormap)
             plt.show(fig)
     '''
     def plot_state_change_prob(self, number):
@@ -1331,7 +1332,7 @@ if __name__ == '__main__':
     results = []
     fig, ax = plt.subplots(3, 1)
     atm = AutomatonV2()
-    for count, som in enumerate([som1]):
+    for count, som in enumerate([som3]):
         som.fit(X_train)
         for db in rdc._get_db_names(r'C:\Users\Apex\Desktop\Kurzversuch_8g'):
             for i in rdc._read_db_in_chunks(path_to_db=db,
