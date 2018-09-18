@@ -1,12 +1,13 @@
-from scipy import ndimage as ndi
-from skimage.morphology import watershed
-from skimage.feature import peak_local_max
-import numpy as np
-import matplotlib.pyplot as plt
 import pickle
 from collections import Counter
-from sklearn.preprocessing import MinMaxScaler
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import ndimage as ndi
+from skimage.feature import peak_local_max
+from skimage.morphology import watershed
 from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import MinMaxScaler
 
 
 def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
