@@ -1,4 +1,7 @@
 # Prozessüberwachung mittels Self-organizing map
+Zum Verständnis diese Quellen anschauen:
+* [Erklärung SOM Algorithmus](http://www.ai-junkie.com/ann/som/som1.html)
+* [Erklärung TensorFlow Code für den Algorithmus](https://codesachin.wordpress.com/2015/11/28/self-organizing-maps-with-googles-tensorflow/)
 
 ### Workflow
 Der Workflow kann im workflow IPython Notebook nachvollzogen werden und läuft folgendermaßen:
