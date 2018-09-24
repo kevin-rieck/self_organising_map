@@ -1339,19 +1339,18 @@ class AutomatonV2:
 
 
 class Splitter:
-    def __init__(self, db_path, sampling_rate=1600):
-        self.db_path = db_path
+    def __init__(self, sampling_rate=1600):
         self.srate = sampling_rate
         self.data_gen = None
         self.marker = None
         self.sample_counter = 0
 
-    def split(self, chunksize, destination_folder):
-        self._read_in_chunks(chunksize)
+    def split(self, chunksize, destination_folder, db_path):
+        self._read_in_chunks(chunksize, db_path)
         return self._find_standstill(destination_folder)
 
-    def _read_in_chunks(self, chunksize):
-        connector = sqlite3.connect(self.db_path)
+    def _read_in_chunks(self, chunksize, db_path):
+        connector = sqlite3.connect(db_path)
         self.data_gen = pd.read_sql_query('SELECT * FROM ACC1', connector, chunksize=int(chunksize))
 
     def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=2.0):
@@ -1394,11 +1393,17 @@ class Splitter:
                     sample = chunk.iloc[row_idx_start:row_idx_end, :]
 
                     if int(3.6e5) < len(sample) < int(4e5):
-                        self.sample_counter += 1
+
                         sample_name = r'sample{}.csv'.format(self.sample_counter)
                         path_to_save = os.path.join(destination_folder, sample_name)
+
+                        if not os.path.exists(destination_folder):
+                            os.makedirs(destination_folder)
+
                         sample.to_csv(path_to_save)
-                        yield len(sample)
+                        print('Sample {} saved in {}'.format(self.sample_counter, path_to_save))
+                        self.sample_counter += 1
+                        #yield len(sample)
 
                         #fig = plt.figure()
                         #plt.plot(sample['x'])
@@ -1407,12 +1412,6 @@ class Splitter:
 
 if __name__ == '__main__':
 
-    # splitter test:
-    db_path = r'D:\MA_data\SensorII_11092018-13092018\multi_process_test\multi_process_test10.db'
-    spl = Splitter(db_path)
-    lengths = spl.split(3e6)
-    for length in lengths:
-        print(length)
     path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
     rdc = RawDataConverter(path=path_to_files, axis='all')
     test_lst = []
