@@ -1348,13 +1348,13 @@ class Splitter:
 
     def split(self, chunksize, destination_folder):
         self._read_in_chunks(chunksize)
-        return self._find_standtstill(destination_folder)
+        return self._find_standstill(destination_folder)
 
     def _read_in_chunks(self, chunksize):
         connector = sqlite3.connect(self.db_path)
         self.data_gen = pd.read_sql_query('SELECT * FROM ACC1', connector, chunksize=int(chunksize))
 
-    def _find_standtstill(self, destination_folder, seconds=1, axis='y', threshold=2.0):
+    def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=2.0):
         window_len = seconds*self.srate
         #chunk = next(self.data_gen)
         for chunk in self.data_gen:
@@ -1403,6 +1403,7 @@ class Splitter:
                         #fig = plt.figure()
                         #plt.plot(sample['x'])
                         #plt.show()
+
 
 if __name__ == '__main__':
 
