@@ -94,7 +94,7 @@ class SOM(object):
         with self._graph.as_default():
 
             # weight vectors initialised from random distribution
-            self._weightage_vects = tf.Variable(tf.random_normal([m * n, dim], seed=666))
+            self._weightage_vects = tf.Variable(tf.zeros([m * n, dim]))
 
             # location of each neuron as row and column
             self._location_vects = tf.constant(np.array(list(self.neuron_locations(m, n))))
@@ -401,7 +401,7 @@ class SOM(object):
             clustering_method = self.clustering_method
 
         if clustering_method == 'agg':
-            clusterer = cluster.AgglomerativeClustering(n_clusters=n_cluster, affinity=cosine_distances,
+            clusterer = cluster.AgglomerativeClustering(n_clusters=n_cluster, affinity=self.metric,
                                                         linkage='average')
         elif clustering_method == 'kmeans':
             clusterer = cluster.KMeans(n_clusters=n_cluster, random_state=42, )
@@ -856,7 +856,7 @@ class RawDataConverter:
         else:
             self.axis = axis
 
-    def convert_to_stft(self, scaling_wanted=True, norm='manhattan'):
+    def convert_to_stft(self, norm='manhattan'):
         if norm not in ['manhattan', 'euclidean']:
             raise ValueError('Norm to use must be manhattan or euclidean')
 
@@ -868,25 +868,24 @@ class RawDataConverter:
             elif norm == 'euclidean':
                 self.dataframe['all'] = (self.dataframe['x']**2 + self.dataframe['y']**2 + self.dataframe['z']**2)**0.5
 
-            self.dataframe['all'] = (self.dataframe['all'] - np.mean(self.dataframe['all'], axis=0))\
-                                     / np.std(self.dataframe['all'], axis=0)
-
         self.dataframe['time'] = 1/self.sampling_freq * self.dataframe.index
         self.dataframe.fillna(value=0, inplace=True)
         self.dataframe['label'] = self.dataframe['label'].astype(np.int32)
 
         try:
-            spec = plt.specgram(self.dataframe[self.axis], NFFT=self.nfft, Fs=self.sampling_freq,
-                                noverlap=self.n_overlap)
-            plt.close()
+            if self.axis == 'all':
+                spec = plt.specgram(self.dataframe['all'], NFFT=self.nfft, Fs=self.sampling_freq,
+                                    noverlap=self.n_overlap)
+            else:
+                spec = plt.specgram(self.dataframe[self.axis], NFFT=self.nfft, Fs=self.sampling_freq,
+                                    noverlap=self.n_overlap)
+
+            plt.show()
 
             self.time_frames = spec[2]
             time_frames = spec[2]
             spectrogram_data = spec[0].T
 
-            if scaling_wanted:
-                spectrogram_data = (spectrogram_data - np.mean(spectrogram_data, axis=0)) / np.std(spectrogram_data,
-                                                                                                   axis=0)
             # create label array
             state_list = []
             for counter, frame in enumerate(time_frames):
@@ -908,7 +907,16 @@ class RawDataConverter:
         except KeyError:
             print('Dataframe needs columns named "x", "y" and "z" with acceleration values and "label" column.')
 
-    def train_test_gen(self, train_samples, test_samples, path=None):
+    def train_test_gen(self, train_samples, test_samples, path=None, scale_before_stft=True):
+        """
+        X_train, X_test, y_train, y_test = train_test_gen()
+        Generates training and test data and the respective labels
+        :param scale_before_stft: whether x,y,z values are to be standardized before transformation
+        :param train_samples: int number in range(0, maximale samplenummer)
+        :param test_samples: int number in range(0, maximale samplenummer)
+        :param path: path to folder containing .csv files with labelled accleration data
+        :return: X_train, X_test, y_train, y_test
+        """
         if path is None:
             path = self.path
 
@@ -922,6 +930,10 @@ class RawDataConverter:
                 sample = 'sample{}.csv'.format(int(i))
                 path_for_convert = os.path.join(path, sample)
                 self.dataframe = pd.read_csv(path_for_convert, index_col=0)
+                self.drop_values(self.dataframe)
+
+                if scale_before_stft:
+                    self.dataframe[['x', 'y', 'z']] = StandardScaler().fit_transform(self.dataframe[['x', 'y', 'z']])
 
                 train_arrays.append(self.convert_to_stft())
 
@@ -929,6 +941,10 @@ class RawDataConverter:
                 sample = 'sample{}.csv'.format(int(i))
                 path_for_convert = os.path.join(path, sample)
                 self.dataframe = pd.read_csv(path_for_convert, index_col=0)
+                self.drop_values(self.dataframe)
+
+                if scale_before_stft:
+                    self.dataframe[['x', 'y', 'z']] = StandardScaler().fit_transform(self.dataframe[['x', 'y', 'z']])
 
                 test_arrays.append(self.convert_to_stft())
 
@@ -941,7 +957,7 @@ class RawDataConverter:
         except IndexError or FileNotFoundError or TypeError:
             print('Check sample numbers (should be iterable) and correctness of path')
 
-    def read_csv(self, path_to_sample, return_norm=True, scale=True, norm='manhattan'):
+    def read_csv(self, path_to_sample, return_norm=False, scale=True, norm='manhattan'):
 
         file_loc = r'{}'.format(path_to_sample)
         df = pd.read_csv(file_loc)
@@ -969,11 +985,12 @@ class RawDataConverter:
         for axis in ['x', 'y', 'z']:
             assert axis in df.columns
 
-        if df.isnull().values.any():
+        self.drop_values(df)
+        '''if df.isnull().values.any():
             initial = len(df)
             df.dropna(inplace=True, axis=0)
             delta = len(df) - initial
-            print('DF has NaN values. {} lines of {} dropped.'.format(abs(delta), initial))
+            print('DF has NaN values. {} lines of {} dropped.'.format(abs(delta), initial))'''
 
         if scaling_before_stft:
             df[['x', 'y', 'z']] = StandardScaler().fit_transform(df[['x', 'y', 'z']])
@@ -994,6 +1011,14 @@ class RawDataConverter:
         to_return = spec[0].T
 
         return to_return
+
+    @staticmethod
+    def drop_values(df):
+        if df.isnull().values.any():
+            initial = len(df)
+            df.dropna(inplace=True, axis=0)
+            delta = len(df) - initial
+            print('DF has NaN values. {} lines of {} dropped.'.format(abs(delta), initial))
 
     @staticmethod
     def _get_db_names(folder_path):
@@ -1313,7 +1338,80 @@ class AutomatonV2:
         self.check_state_remaining_error(data)
 
 
+class Splitter:
+    def __init__(self, db_path, sampling_rate=1600):
+        self.db_path = db_path
+        self.srate = sampling_rate
+        self.data_gen = None
+        self.marker = None
+        self.sample_counter = 0
+
+    def split(self, chunksize, destination_folder):
+        self._read_in_chunks(chunksize)
+        return self._find_standtstill(destination_folder)
+
+    def _read_in_chunks(self, chunksize):
+        connector = sqlite3.connect(self.db_path)
+        self.data_gen = pd.read_sql_query('SELECT * FROM ACC1', connector, chunksize=int(chunksize))
+
+    def _find_standtstill(self, destination_folder, seconds=1, axis='y', threshold=2.0):
+        window_len = seconds*self.srate
+        #chunk = next(self.data_gen)
+        for chunk in self.data_gen:
+            x, y, z = chunk['x'], chunk['y'], chunk['z']
+            axis_dict = {'x': x, 'y': y, 'z': z}
+            axis_to_use = axis_dict[axis]
+
+            result = []
+            counter = 0
+            marker = []
+
+            for window in range(len(chunk) // window_len):
+
+                start = window * window_len
+                end = (window + 1) * window_len
+                indicator = np.std(axis_to_use.values[start:end])
+                result.append(np.std(axis_to_use.values[start:end]))
+
+                if indicator < threshold:
+                    counter += 1
+                else:
+                    counter = 0
+
+                if counter == 15:
+                    print('Standstill detected. Marker appended.')
+                    marker.append(start)
+
+            self.marker = marker
+
+            for count, mark in enumerate(marker):
+                if count == 0:
+                    pass
+
+                else:
+                    row_idx_start = marker[count-1]
+                    row_idx_end = marker[count]
+                    sample = chunk.iloc[row_idx_start:row_idx_end, :]
+
+                    if int(3.6e5) < len(sample) < int(4e5):
+                        self.sample_counter += 1
+                        sample_name = r'sample{}.csv'.format(self.sample_counter)
+                        path_to_save = os.path.join(destination_folder, sample_name)
+                        sample.to_csv(path_to_save)
+                        yield len(sample)
+
+                        #fig = plt.figure()
+                        #plt.plot(sample['x'])
+                        #plt.show()
+
 if __name__ == '__main__':
+
+    # splitter test:
+    db_path = r'D:\MA_data\SensorII_11092018-13092018\multi_process_test\multi_process_test10.db'
+    spl = Splitter(db_path)
+    lengths = spl.split(3e6)
+    for length in lengths:
+        print(length)
     path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
     rdc = RawDataConverter(path=path_to_files, axis='all')
     test_lst = []
