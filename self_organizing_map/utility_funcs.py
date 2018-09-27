@@ -28,7 +28,7 @@ def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
         # thresh = filters.threshold_mean(image)
         binary = image < threshold
         distance = ndi.distance_transform_edt(binary)
-        local_maxi = peak_local_max(distance, indices=False, labels=binary, footprint=np.ones((1, 1)))
+        local_maxi = peak_local_max(distance, indices=False, labels=binary)  # , footprint=np.ones((1, 1)))
         markers = ndi.label(local_maxi)[0]
         labels = watershed(distance, markers, mask=binary)
         n_cluster.append(np.unique(labels).size)
@@ -51,7 +51,7 @@ def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
         for counter, value in enumerate(n_cluster):
             if value == most_common_cluster:
                 index_common_cluster = counter
-
+    print(r'Clusters chosen: {}'.format(most_common_cluster))
     ideal_treshold = np.linspace(lower_tb, upper_tb, upper_tb - lower_tb+1)[index_common_cluster]
 
     binary = image < ideal_treshold

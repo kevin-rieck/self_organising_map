@@ -94,7 +94,7 @@ class SOM(object):
         with self._graph.as_default():
 
             # weight vectors initialised from random distribution
-            self._weightage_vects = tf.Variable(tf.zeros([m * n, dim]))
+            self._weightage_vects = tf.Variable(tf.random_uniform([m * n, dim], minval=0.0, maxval=1.0, seed=666))
 
             # location of each neuron as row and column
             self._location_vects = tf.constant(np.array(list(self.neuron_locations(m, n))))
@@ -119,7 +119,7 @@ class SOM(object):
             # index of the neuron which gives the least value
             if self.metric == 'manhattan':
                 distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
-                bmu_index = tf.argmin(distance)
+                bmu_index = tf.argmin(distance, 0)
                 # debug = tf.norm(tf.subtract(self._weightage_vects, self._vect_input), ord=0.5, keepdims=True)
                 # bmu_index = tf.argmin(debug)
 
@@ -129,11 +129,11 @@ class SOM(object):
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
                 # distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
-                bmu_index = tf.argmax(cosine_similarity)
+                bmu_index = tf.argmax(cosine_similarity, 0)
 
             else:
                 distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
-                bmu_index = tf.argmin(distance)
+                bmu_index = tf.argmin(distance, 0)
 
             # This will extract the location of the BMU based on the BMU's index
             slice_input = tf.pad(tf.reshape(bmu_index, [1]), np.array([[0, 1]]))
@@ -1225,8 +1225,8 @@ class AutomatonV2:
         # scale node sizes
         node_sizes = np.array(node_sizes) / np.sum(node_sizes)
 
-        loc = nx.circular_layout(G)
-        mappable = nx.draw_networkx_nodes(G, loc, nodelist=nodes, node_size=700,
+        loc = nx.shell_layout(G)
+        mappable = nx.draw_networkx_nodes(G, loc, nodelist=nodes, node_size=1000,
                                           node_color=node_sizes, edgecolors='k', alpha=1.0, label=node_labels,
                                           cmap='coolwarm', vmin=0.0, vmax=1.0)
         nx.draw_networkx_edges(G, loc, width=2.0, arrowsize=14, node_size=500, edge_color='k')
@@ -1234,7 +1234,8 @@ class AutomatonV2:
         nx.draw_networkx_edge_labels(G, loc, label_pos=0.2, edge_labels=edge_labels)
         nx.draw_networkx_labels(G, loc)
 
-        plt.colorbar(mappable)
+        cbar = plt.colorbar(mappable)
+        cbar.set_label('fraction of cycle time', size=16)
         plt.axis('off')
         plt.show()
 
@@ -1353,7 +1354,7 @@ class Splitter:
         connector = sqlite3.connect(db_path)
         self.data_gen = pd.read_sql_query('SELECT * FROM ACC1', connector, chunksize=int(chunksize))
 
-    def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=2.0):
+    def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=1.0):
         window_len = seconds*self.srate
         #chunk = next(self.data_gen)
         for chunk in self.data_gen:
@@ -1377,7 +1378,7 @@ class Splitter:
                 else:
                     counter = 0
 
-                if counter == 15:
+                if counter == 18:
                     print('Standstill detected. Marker appended.')
                     marker.append(start)
 
@@ -1392,7 +1393,7 @@ class Splitter:
                     row_idx_end = marker[count]
                     sample = chunk.iloc[row_idx_start:row_idx_end, :]
 
-                    if int(3.6e5) < len(sample) < int(4e5):
+                    if int(3.5e5) < len(sample) < int(4.2e5):
 
                         sample_name = r'sample{}.csv'.format(self.sample_counter)
                         path_to_save = os.path.join(destination_folder, sample_name)
@@ -1411,6 +1412,14 @@ class Splitter:
 
 
 if __name__ == '__main__':
+    folder = r'D:\MA_data\SensorII_28082018-03092018\shop_floor_test'
+    destination_folder = r'D:\MA_data\SensorII_28082018-03092018\splitted'
+
+    #splitter = Splitter()
+    for i in range(97):
+        db_name = r'shop_floor_test{}.db'.format(i)
+        db_path = os.path.join(folder, db_name)
+        splitter.split(3e6, destination_folder, db_path)
 
     path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
     rdc = RawDataConverter(path=path_to_files, axis='all')
