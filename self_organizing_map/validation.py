@@ -17,13 +17,19 @@ def main():
     X_train, X_test, y_train, y_test = rdc.train_test_gen([13], [5])
     y_train, y_test = y_train.astype(np.int32), y_test.astype(np.int32)
     #X_train, X_test = StandardScaler().fit_transform(X_train), StandardScaler().fit_transform(X_test)
-
+    training_data = []
+    for i in np.unique(y_train):
+        row_idx = np.where(y_train == i)[0]
+        debug = X_train[row_idx, :]
+        med_debug = np.median(debug, axis=0, keepdims=False).reshape(1, -1)
+        training_data.append(med_debug)
+    training_data = np.vstack(training_data)
     # stats = StatFeatureExtractor(X_train).features
     # X_test = StatFeatureExtractor(X_test).features
     # instantiate SOM
-    som = SOM(20, 40, X_train.shape[1], 20, 0.3, wanted_clusters=10, metric='cosine')
+    som = SOM(20, 40, X_train.shape[1], 400, 0.3, wanted_clusters=10, metric='manhattan')
     # train
-    som.fit(X_train)
+    som.fit(X_train[::10])
 
     # plot U-matrix
     umatrix, axis1 = plt.subplots(1, 1)

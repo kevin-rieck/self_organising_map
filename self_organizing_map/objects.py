@@ -29,7 +29,7 @@ class SOM(object):
 
     def __init__(self, m, n, dim, n_iterations=100, alpha=None, sigma=None,
                  wanted_clusters=15, metric='manhattan', clustering_method='agg',
-                 pca_init_wanted=False):
+                 pca_init_wanted=False, decay='exp'):
         """
         :param m: number of rows of the map
         :param n: number of columns of the map
@@ -140,11 +140,12 @@ class SOM(object):
             bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
                                                                                      tf.int64)), [2])
 
-            # compute alpha and sigma based on the current iteration
-            learning_rate_op = tf.subtract(1.0, tf.div(self._iter_input, self._n_iterations))
-
-            # this line will compute the decrease of alpha and sigma as a exponential decay:
-            # learning_rate_op = tf.exp(tf.negative((6*self._iter_input)/self._n_iterations))
+            if decay == 'exp':
+                # this line will compute the decrease of alpha and sigma as a exponential decay:
+                learning_rate_op = tf.exp(tf.negative((6*self._iter_input)/self._n_iterations))
+            else:
+                # compute alpha and sigma linearly based on the current iteration
+                learning_rate_op = tf.subtract(1.0, tf.div(self._iter_input, self._n_iterations))
 
             _alpha_op = tf.multiply(alpha, learning_rate_op)
             _sigma_op = tf.multiply(sigma, learning_rate_op)

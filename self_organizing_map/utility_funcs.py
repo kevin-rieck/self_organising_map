@@ -8,6 +8,7 @@ from skimage.feature import peak_local_max
 from skimage.morphology import watershed
 from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import MinMaxScaler
+from skimage import filters
 
 
 def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
@@ -53,13 +54,16 @@ def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
                 index_common_cluster = counter
     print(r'Clusters chosen: {}'.format(most_common_cluster))
     ideal_treshold = np.linspace(lower_tb, upper_tb, upper_tb - lower_tb+1)[index_common_cluster]
-
-    binary = image < ideal_treshold
+    filters.try_all_threshold(image)
+    plt.show()
+    binary = image < filters.threshold_otsu(image) #ideal_treshold
     distance = ndi.distance_transform_edt(binary)
     local_maxi = peak_local_max(distance, indices=False, labels=binary, footprint=np.ones((1, 1)))
     markers = ndi.label(local_maxi)[0]
     final_labels = watershed(distance, markers, mask=binary)
-
+    img, ax = plt.subplots(1, 1)
+    ax.imshow(final_labels)
+    plt.show(img)
     if save_labels:
         with open('watershed_cluster.pickle', 'wb') as handle:
             pickle.dump(final_labels, handle, protocol=pickle.HIGHEST_PROTOCOL)
