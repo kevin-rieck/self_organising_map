@@ -119,8 +119,8 @@ class SOM(object):
             # neuron's weight vector and the input, and returns the
             # index of the neuron which gives the least value
             if self.metric == 'manhattan':
-                distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
-                bmu_index = tf.argmin(distance, 0)
+                self.distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
+                bmu_index = tf.argmin(self.distance, 0)
                 # debug = tf.norm(tf.subtract(self._weightage_vects, self._vect_input), ord=0.5, keepdims=True)
                 # bmu_index = tf.argmin(debug)
 
@@ -128,17 +128,17 @@ class SOM(object):
                 input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
                 input_2 = tf.nn.l2_normalize(self._vect_input, 0)
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                # distance = 1.0 - cosine_similarity
+                self.distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
                 bmu_index = tf.argmax(cosine_similarity, 0)
 
             else:
-                distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
-                bmu_index = tf.argmin(distance, 0)
+                self.distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
+                bmu_index = tf.argmin(self.distance, 0)
 
             # This will extract the location of the BMU based on the BMU's index
             slice_input = tf.pad(tf.reshape(bmu_index, [1]), np.array([[0, 1]]))
-            bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
+            self.bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
                                                                                      tf.int64)), [2])
 
             if decay == 'exp':
@@ -154,7 +154,7 @@ class SOM(object):
             # Construct the op that will generate a vector with learning rates for all neurons,
             #  based on iteration number and location in comparison to the BMU.
             bmu_distance_squares = tf.reduce_sum(tf.pow(tf.subtract(
-                self._location_vects, bmu_loc), 2), 1)
+                self._location_vects, self.bmu_loc), 2), 1)
             neighbourhood_func = tf.exp(tf.negative(tf.div(tf.cast(
                 bmu_distance_squares, "float32"), tf.multiply(tf.pow(_sigma_op, 2), 2))))
             learning_rate_op = tf.multiply(_alpha_op, neighbourhood_func)
@@ -251,7 +251,7 @@ class SOM(object):
             centroid_grid[loc[0]].append(self._weightages[i])
         self._centroid_grid = centroid_grid
         self._trained = True
-        self._sess.close()
+        # self._sess.close()
         self._get_clusters(n_cluster=self.wanted_clusters)
 
     def get_centroids(self):
@@ -296,23 +296,17 @@ class SOM(object):
 
         start_time = time.time()
 
-        location_vects = [(i, k) for i in range(len(self.get_centroids())) for k in range(len(self.get_centroids()[0]))]
-        weightage_vects = np.array(self.get_centroids())
-        shape_wv = weightage_vects.shape
-        qe_matrix = np.zeros(shape=(shape_wv[0], shape_wv[1]))
-        weightage_vects = weightage_vects.reshape((shape_wv[0] * shape_wv[1], shape_wv[-1]))
         to_return = []
         quantization_error = []
 
         # Distance of the BMU is calculated using the distance function that was given to __init__
         for vect in input_vects:
-            vect = vect.reshape(-1, vect.shape[0])
-            min_index = self.dist_func(weightage_vects, vect).argmin()
-            min_qe = self.dist_func(weightage_vects, vect)[min_index]
-            locations = location_vects[min_index]
-            qe_matrix[locations[0], locations[1]] = min_qe
-            to_return.append(location_vects[min_index])
-            quantization_error.append(min_qe)
+            loc = self._sess.run(self.bmu_loc, feed_dict={self._vect_input: vect,
+                                                          self._iter_input: 42})
+            qe = self._sess.run(self.distance, feed_dict={self._vect_input: vect,
+                                                          self._iter_input: 42})
+            to_return.append(loc)
+            quantization_error.append(qe)
 
         self.last_bmu_qe = np.array(quantization_error)
         stop_time = time.time() - start_time
@@ -320,11 +314,6 @@ class SOM(object):
         # prints the duration of the calculation and the average QE over all inputs
         print('Dauer = {:.3f} s'.format(stop_time))
         print('QE = {:.3f}'.format(np.mean(np.array(quantization_error))))
-
-        if plot_wanted:
-            qe_map, ax = plt.subplots(1, 1)
-            ax.matshow(qe_matrix, cmap=self.colormap)
-            qe_map.show()
 
         return to_return
 
@@ -637,8 +626,14 @@ class SOM(object):
         """
         label_set = set(label_list)
         label_array = np.array(label_list, dtype=np.float32)  # float because qe_array also float
-        label_array = np.reshape(label_array, newshape=(-1, 1))
-        assert label_array.shape == self.last_bmu_qe.shape
+
+        if len(label_array.shape) < 2:
+            label_array = np.reshape(label_array, newshape=(-1, 1))
+            print('Label array shape changed to {}'.format(label_array.shape))
+        if len(self.last_bmu_qe.shape) < 2:
+            self.last_bmu_qe = np.reshape(self.last_bmu_qe, newshape=(-1, 1))
+            print('Last QE array shape changed to {}'.format(self.last_bmu_qe.shape))
+
         combined_array = np.hstack((label_array, self.last_bmu_qe))
 
         for value in label_set:
@@ -1431,17 +1426,17 @@ class Splitter:
 
 
 if __name__ == '__main__':
-    folder = r'D:\MA_data\SensorII_28082018-03092018\shop_floor_test'
+    '''folder = r'D:\MA_data\SensorII_28082018-03092018\shop_floor_test'
     destination_folder = r'D:\MA_data\SensorII_28082018-03092018\splitted'
 
     #splitter = Splitter()
     for i in range(97):
         db_name = r'shop_floor_test{}.db'.format(i)
         db_path = os.path.join(folder, db_name)
-        splitter.split(3e6, destination_folder, db_path)
+        splitter.split(3e6, destination_folder, db_path)'''
 
     path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
-    rdc = RawDataConverter(path=path_to_files, axis='all')
+    rdc = RawDataConverter(path=path_to_files, axis='y')
     test_lst = []
     for i in range(4):
         file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))

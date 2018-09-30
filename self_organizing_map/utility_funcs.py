@@ -56,7 +56,7 @@ def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
     ideal_treshold = np.linspace(lower_tb, upper_tb, upper_tb - lower_tb+1)[index_common_cluster]
     filters.try_all_threshold(image)
     plt.show()
-    binary = image < filters.threshold_otsu(image) #ideal_treshold
+    binary = image < filters.threshold_yen(image) #ideal_treshold
     distance = ndi.distance_transform_edt(binary)
     local_maxi = peak_local_max(distance, indices=False, labels=binary, footprint=np.ones((1, 1)))
     markers = ndi.label(local_maxi)[0]
