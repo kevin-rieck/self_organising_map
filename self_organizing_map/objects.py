@@ -73,6 +73,7 @@ class SOM(object):
 
         self._m = m
         self._n = n
+        self._alpha = alpha
         self.wanted_clusters = wanted_clusters
         self.pca_init_wanted = pca_init_wanted
         self._n_iterations = abs(int(n_iterations))
@@ -361,6 +362,20 @@ class SOM(object):
         if not self.clustered_by_watershed:
             self.cluster = get_watershed(self.get_umatrix())
             self.clustered_by_watershed = True
+            clustermap, ax = plt.subplots(1, 1)
+            ax.imshow(self.cluster, cmap=self.colormap)
+            n_cluster = np.max(self.cluster)
+            ax.set_title('Clusters = {}, Epochs = {}, Metric = {}, lr = {}'.format(n_cluster, self._n_iterations,
+                                                                                   self.metric.capitalize(),
+                                                                                   self._alpha))
+            ax.get_xaxis().set_ticks([])
+            ax.get_yaxis().set_ticks([])
+
+            fname = r'{}x{} clusters_{}_epochs_{}_metric_{}_lr_{}_ws.png'.format(self._m, self._n, n_cluster,
+                                                                                 self._n_iterations,
+                                                                                 self.metric.capitalize(), self._alpha)
+            self.save_figure(clustermap, fname)
+
             print('Clustering was by {} -> changed to watershed'.format(self.clustering_method))
 
         self._last_bmus = self._get_bmu(input_vects)
@@ -414,13 +429,15 @@ class SOM(object):
 
         clustermap, ax = plt.subplots(1, 1)
         ax.imshow(cluster_array, cmap=self.colormap)
-        ax.set_title('Clusters = {}, Epochs = {}, Metric = {}'.format(n_cluster,
-                                                                      self._n_iterations, self.metric.capitalize()))
+        ax.set_title('Clusters = {}, Epochs = {}, Metric = {}, lr = {}'.format(n_cluster, self._n_iterations,
+                                                                               self.metric.capitalize(),
+                                                                               self._alpha))
         ax.get_xaxis().set_ticks([])
         ax.get_yaxis().set_ticks([])
 
-        fname = r'{}x{} clusters_{}_epochs_{}_metric_{}.png'.format(self._m, self._n, n_cluster, self._n_iterations,
-                                                                    self.metric.capitalize())
+        fname = r'{}x{} clusters_{}_epochs_{}_metric_{}_lr_{}.png'.format(self._m, self._n, n_cluster,
+                                                                          self._n_iterations,
+                                                                          self.metric.capitalize(), self._alpha)
         if numbers_wanted:
             used_numbers = []
             for i in range(self._m):
@@ -451,10 +468,11 @@ class SOM(object):
         umatrix_plot, ax = plt.subplots(1, 1)
         ax.imshow(self.umatrix, cmap=self.colormap, interpolation='none',
                   vmin=np.min(self.umatrix), vmax=np.max(self.umatrix))
-        ax.set_title('{}x{}, Epochs = {}, Metric = {}'.format(self._m, self._n, self._n_iterations,
-                                                              self.metric.capitalize()))
-        fname = r'{}x{} som_{}_epochs_{}_metric_{}.png'.format(self._m, self._n, self.__class__.__name__,
-                                                               self._n_iterations, self.metric.capitalize())
+        ax.set_title('{}x{}, Epochs = {}, Metric = {}, lr = {}'.format(self._m, self._n, self._n_iterations,
+                                                                       self.metric.capitalize(), self._alpha))
+        fname = r'{}x{} som_{}_epochs_{}_metric_{}_lr_{}.png'.format(self._m, self._n, self.__class__.__name__,
+                                                                     self._n_iterations, self.metric.capitalize(),
+                                                                     self._alpha)
         ax.get_xaxis().set_ticks([])
         ax.get_yaxis().set_ticks([])
 
