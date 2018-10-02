@@ -666,7 +666,7 @@ class SOM(object):
         if not os.path.exists(folder_path):
             os.mkdir(folder_path)
         path = os.path.join(folder_path, filename)
-        fig_id.savefig(path, bbox_inches='tight', format='png')
+        fig_id.savefig(path, bbox_inches='tight', format='png', dpi=600)
         print('Saving figure in {}'.format(str(os.path.abspath(folder_path))))
 
 
