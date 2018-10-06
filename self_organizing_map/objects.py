@@ -119,8 +119,9 @@ class SOM(object):
             # neuron's weight vector and the input, and returns the
             # index of the neuron which gives the least value
             if self.metric == 'manhattan':
-                self.distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
-                bmu_index = tf.argmin(self.distance, 0)
+                distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
+                bmu_index = tf.argmin(distance, 0)
+                self.distance = tf.reduce_min(distance)
                 # debug = tf.norm(tf.subtract(self._weightage_vects, self._vect_input), ord=0.5, keepdims=True)
                 # bmu_index = tf.argmin(debug)
 
@@ -128,14 +129,15 @@ class SOM(object):
                 input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
                 input_2 = tf.nn.l2_normalize(self._vect_input, 0)
                 cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                self.distance = 1.0 - cosine_similarity
+                distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
                 bmu_index = tf.argmax(cosine_similarity, 0)
+                self.distance = tf.reduce_min(distance)
 
             else:
-                self.distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
-                bmu_index = tf.argmin(self.distance, 0)
-
+                distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
+                bmu_index = tf.argmin(distance, 0)
+                self.distance = tf.reduce_min(distance)
             # This will extract the location of the BMU based on the BMU's index
             slice_input = tf.pad(tf.reshape(bmu_index, [1]), np.array([[0, 1]]))
             self.bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
