@@ -6,7 +6,7 @@ import numpy as np
 from scipy import ndimage as ndi
 from skimage.feature import peak_local_max
 from skimage.morphology import watershed
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
 from skimage import filters
 
@@ -208,3 +208,53 @@ def mat_compare_v3(reference, to_adjust, plot_wanted=False):
         plt.show(fig)
 
     return to_adjust
+
+
+def mat_compare_v4(reference, to_adjust):
+    assert isinstance(reference, list)
+    assert isinstance(to_adjust, list)
+
+    reference, to_adjust = np.array(reference), np.array(to_adjust)
+    print('Initial accuracy: {:.2f}'.format(accuracy_score(reference, to_adjust)))
+    adjusted_array = np.copy(to_adjust)
+    change_to = None
+    change_from = None
+    blocked_numbers = set()
+
+    while True:
+        max_number = 0
+        break_counter = 0
+
+        for i in np.unique(reference):
+            counts = np.bincount(adjusted_array[reference == i])
+            most_common, number = np.argmax(counts), np.max(counts)
+
+            if number > max_number and number not in blocked_numbers and i != most_common:
+                max_number = number
+                change_from = most_common
+                change_to = i
+            else:
+                break_counter += 1
+                if break_counter == len(np.unique(reference)):
+                    print('New accuracy: {:.2f}'.format(accuracy_score(reference, adjusted_array)))
+                    return np.copy(adjusted_array)
+
+        adjusted_array[to_adjust == change_from] = change_to
+        adjusted_array[to_adjust == change_to] = change_from
+        blocked_numbers.add(change_to)
+
+        to_adjust = np.copy(adjusted_array)
+
+
+if __name__ == '__main__':
+
+    list1 = [3, 1, 1, 2, 2, 2, 3, 3, 3]
+    list2 = [9, 9, 9, 9, 2, 1, 2, 2, 2]
+
+    adjusted = mat_compare_v4(list1, list2)
+    fig1, axes = plt.subplots(2, 1)
+    axes[0].plot(list1, c='k')
+    axes[0].plot(list2, c='r')
+    axes[1].plot(list1, c='k')
+    axes[1].plot(adjusted, c='r')
+    plt.show(fig1)

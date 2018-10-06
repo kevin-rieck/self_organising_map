@@ -1,5 +1,5 @@
 from self_organizing_map.objects import SOM, RawDataConverter
-from self_organizing_map.utility_funcs import mat_compare_v3
+from self_organizing_map.utility_funcs import mat_compare_v4
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,7 +41,7 @@ def main():
     som.animate_bmu_trajectory()
 
     # adjust labeling
-    y_pred = mat_compare_v3(y_test, y_pred)
+    y_pred = mat_compare_v4(y_test, y_pred)
 
     comparison, axis2 = plt.subplots(1, 1)
     axis2.plot(y_pred, c='r')
