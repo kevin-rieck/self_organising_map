@@ -1,62 +1,26 @@
 import pickle
-from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import ndimage as ndi
 from skimage.feature import peak_local_max
 from skimage.morphology import watershed
-from sklearn.metrics import confusion_matrix, accuracy_score
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score
 from skimage import filters
 
 
-def get_watershed(image, save_labels=False, plot=False, wanted_clusters=None):
+def get_watershed(image, save_labels=False, plot=False):
     """
     uses watershed transformation to get clusters from the presented U-matrix of the SOM
     :param image: u_matrix representation of the SOM loaded from pickle
     :param save_labels: bool to save the label matrix
     :param plot: bool to plot diagrams showing the found clusters
-    :param wanted_clusters: number that specifies the number of clusters to be found
     :return: matrix of labels each corresponding to a cluster
     """
-    n_cluster = []
-    scaler = MinMaxScaler(feature_range=(0, 255))
-    image = scaler.fit_transform(image)
-    lower_tb = 0
-    upper_tb = 160
-    for threshold in np.linspace(lower_tb, upper_tb, upper_tb - lower_tb+1):
-        # thresh = filters.threshold_mean(image)
-        binary = image < threshold
-        distance = ndi.distance_transform_edt(binary)
-        local_maxi = peak_local_max(distance, indices=False, labels=binary)  # , footprint=np.ones((1, 1)))
-        markers = ndi.label(local_maxi)[0]
-        labels = watershed(distance, markers, mask=binary)
-        n_cluster.append(np.unique(labels).size)
 
-    # plt.hist(n_cluster, bins=len(n_cluster))
-    # plt.show()
-    # liste aus Tupel, erster Eintrag, erster Wert ist die Clusternummer
-    if wanted_clusters is None:
-        most_common_cluster = Counter(n_cluster).most_common(1)[0][0]
-        index_common_cluster = None
-        for counter, value in enumerate(n_cluster):
-            if value == most_common_cluster:
-                index_common_cluster = counter
-    else:
-        if wanted_clusters not in n_cluster:
-            raise ValueError("Anzahl Cluster ungültig, nur Werte von {} bis {}".format(min(n_cluster), max(n_cluster)))
-
-        most_common_cluster = wanted_clusters
-        index_common_cluster = None
-        for counter, value in enumerate(n_cluster):
-            if value == most_common_cluster:
-                index_common_cluster = counter
-    print(r'Clusters chosen: {}'.format(most_common_cluster))
-    ideal_treshold = np.linspace(lower_tb, upper_tb, upper_tb - lower_tb+1)[index_common_cluster]
     filters.try_all_threshold(image)
-    plt.show()
-    binary = image < filters.threshold_yen(image) #ideal_treshold
+
+    binary = image < filters.threshold_otsu(image)
     distance = ndi.distance_transform_edt(binary)
     local_maxi = peak_local_max(distance, indices=False, labels=binary, footprint=np.ones((1, 1)))
     markers = ndi.label(local_maxi)[0]
@@ -155,64 +119,7 @@ def remove_border_label(list_of_labels):
     return list_of_labels
 
 
-def mat_compare_v3(reference, to_adjust, plot_wanted=False):
-    """
-    Function that adjusts the numbering of a supplied label list to fit a given reference list
-    :param reference: List of labels that constitute the reference
-    :param to_adjust: List of labels that are to be adjusted to the reference
-    :return: adjusted list of the given list to_adjust
-    """
-    if plot_wanted:
-        # Plot both lists before alteration
-        fig = plt.figure(figsize=(20, 10))
-        ax1 = plt.subplot(211)
-        ax1.set_title('Vorher')
-        ax2 = plt.subplot(212, sharex=ax1, sharey=ax1)
-        ax2.set_title('Nachher')
-        ax1.plot(reference, 'r-')
-        ax1.plot(to_adjust, 'k-', alpha=0.7)
-
-    # define initial values for the loop
-    error_array = confusion_matrix(reference, to_adjust)
-    blocked_numbers = set()
-
-    # while true, iterate through the maxima of the conf-matr and perform swaps of columns and block used values
-    while np.max(error_array) != 0:
-        idx = np.where(error_array == np.amax(error_array))
-        column = idx[1][0]
-        row = idx[0][0]
-
-        if column == row:
-            error_array[idx] = 0
-            blocked_numbers.add(row)
-            continue
-        elif row in blocked_numbers or column in blocked_numbers:
-            error_array[idx] = 0
-            continue
-        else:
-            blocked_numbers.add(row)
-            for counter, value in enumerate(to_adjust):
-                if value == row:
-                    to_adjust[counter] = column
-                if value == column:
-                    to_adjust[counter] = row
-            error_array = confusion_matrix(reference, to_adjust)
-            continue
-
-    if plot_wanted:
-        ax2.plot(reference, 'r-')
-        ax2.plot(to_adjust, 'k-', alpha=0.5)
-        fig.tight_layout()
-        ax1.set_aspect('auto')
-        ax2.set_aspect('auto')
-        plt.show(fig)
-
-    return to_adjust
-
-
 def mat_compare_v4(reference, to_adjust):
-    assert isinstance(reference, list)
-    assert isinstance(to_adjust, list)
 
     reference, to_adjust = np.array(reference), np.array(to_adjust)
     print('Initial accuracy: {:.2f}'.format(accuracy_score(reference, to_adjust)))
@@ -229,7 +136,7 @@ def mat_compare_v4(reference, to_adjust):
             counts = np.bincount(adjusted_array[reference == i])
             most_common, number = np.argmax(counts), np.max(counts)
 
-            if number > max_number and number not in blocked_numbers and i != most_common:
+            if number > max_number and most_common not in blocked_numbers and i != most_common:
                 max_number = number
                 change_from = most_common
                 change_to = i
@@ -248,8 +155,8 @@ def mat_compare_v4(reference, to_adjust):
 
 if __name__ == '__main__':
 
-    list1 = [3, 1, 1, 2, 2, 2, 3, 3, 3]
-    list2 = [9, 9, 9, 9, 2, 1, 2, 2, 2]
+    list1 = [0, 1, 1, 2, 2, 2, 3, 3, 3]
+    list2 = [3, 9, 9, 9, 2, 1, 2, 2, 2]
 
     adjusted = mat_compare_v4(list1, list2)
     fig1, axes = plt.subplots(2, 1)

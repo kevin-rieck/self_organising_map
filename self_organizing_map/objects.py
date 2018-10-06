@@ -126,9 +126,10 @@ class SOM(object):
                 # bmu_index = tf.argmin(debug)
 
             elif self.metric == 'cosine':
-                input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
+                input_1 = tf.nn.l2_normalize(self._weightage_vects, 1)
                 input_2 = tf.nn.l2_normalize(self._vect_input, 0)
-                cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
+                input_2_2d = tf.expand_dims(input_2, 1)
+                cosine_similarity = tf.reduce_sum(tf.matmul(input_1, input_2_2d), axis=1)
                 distance = 1.0 - cosine_similarity
                 # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
                 bmu_index = tf.argmax(cosine_similarity, 0)
