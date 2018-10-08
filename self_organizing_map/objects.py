@@ -15,7 +15,7 @@ from sklearn.manifold import MDS
 from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, manhattan_distances
 from sklearn.preprocessing import StandardScaler
 
-from self_organizing_map.utility_funcs import get_watershed, calc_umatrix, remove_border_label
+from self_organizing_map.utility_funcs import get_watershed, calc_umatrix, remove_border_label, ColorCarrier
 
 
 class SOM(object):
@@ -662,6 +662,42 @@ class SOM(object):
         qe_fig.tight_layout()
         plt.show(qe_fig)
 
+    def plot_cluster_mean_spectrum(self, cluster_number, input_vector=None):
+        centroid_grid = np.array(self.get_centroids())
+        grid_shape = centroid_grid.shape
+        lines = []
+        labels = []
+        color_lst = []
+        if input_vector is not None:
+            loc = self._get_bmu([input_vector])
+            bmu_spectrum = centroid_grid[loc[0][0], loc[0][1]]
+            lines.append(bmu_spectrum)
+            labels.append('Spectrum of BMU')
+            color_lst.append(ColorCarrier().faps_colors['green'])
+            lines.append(input_vector)
+            labels.append('Input spectrum')
+            color_lst.append(ColorCarrier().faps_colors['red'])
+            cluster_number = som.cluster[loc[0][0], loc[0][1]]
+
+        centroid_grid = np.reshape(centroid_grid, (grid_shape[0]*grid_shape[1], grid_shape[-1]))
+        cluster_array = som.cluster.reshape(grid_shape[0]*grid_shape[1], )
+        idx = np.where(cluster_array == cluster_number)
+        subset = centroid_grid[idx]
+        print(subset.shape)
+
+        spectrum = np.mean(subset, axis=0)
+        lines.append(spectrum)
+        labels.append('Mean spectrum of cluster')
+        color_lst.append(ColorCarrier().faps_colors['black'])
+
+        spectrum_fig, axes = plt.subplots(1, 1, figsize=(12, 4))
+        for line, label, col in zip(lines, labels, color_lst):
+            axes.plot(line, c=col, label=label)
+        axes.set_xlabel('Frequency band')
+        axes.set_ylabel('Amplitude')
+        axes.legend()
+        axes.grid(alpha=0.75)
+
     @staticmethod
     def save_figure(fig_id, filename, foldername='images'):
         working_dir = os.getcwd()
@@ -1243,12 +1279,12 @@ class AutomatonV2:
         node_sizes = np.array(node_sizes) / np.sum(node_sizes)
 
         loc = nx.shell_layout(G)
-        mappable = nx.draw_networkx_nodes(G, loc, nodelist=nodes, node_size=1000,
+        mappable = nx.draw_networkx_nodes(G, loc, nodelist=nodes, node_size=1500,
                                           node_color=node_sizes, edgecolors='k', alpha=1.0, label=node_labels,
                                           cmap='coolwarm', vmin=0.0, vmax=1.0)
-        nx.draw_networkx_edges(G, loc, width=2.0, arrowsize=14, node_size=500, edge_color='k')
+        nx.draw_networkx_edges(G, loc, width=2.0, arrowsize=20, node_size=1500, edge_color='k')
         edge_labels = nx.get_edge_attributes(G, 'weight')
-        nx.draw_networkx_edge_labels(G, loc, label_pos=0.2, edge_labels=edge_labels)
+        # nx.draw_networkx_edge_labels(G, loc, label_pos=0.2, edge_labels=edge_labels)
         nx.draw_networkx_labels(G, loc)
 
         cbar = plt.colorbar(mappable)
@@ -1451,7 +1487,7 @@ if __name__ == '__main__':
 
     som1 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='manhattan')
     som2 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='euclidean')
-    som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='cosine')
+    som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
 
     results = []
     fig, ax = plt.subplots(3, 1)
@@ -1463,8 +1499,12 @@ if __name__ == '__main__':
                                             chunksize=384000):
                 pred = som.predict(i)
                 atm.train(pred)
-        plt.style.use('ggplot')
+        # plt.style.use('ggplot')
         som.plot_state_dependent_qe()
+        som.plot_cluster_mean_spectrum(4, input_vector=X_train[1000])
+        plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('blue_dark', 'red_dark'))
+        plt.show()
+        # som.plot_cluster_mean_spectrum(5)
         atm.plot_time_distribution()
         atm.plot_state_durations()
         atm.plot_nx_graph()

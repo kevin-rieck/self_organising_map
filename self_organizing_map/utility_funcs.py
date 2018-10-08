@@ -1,12 +1,38 @@
 import pickle
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as clr
 import numpy as np
 from scipy import ndimage as ndi
 from skimage.feature import peak_local_max
 from skimage.morphology import watershed
 from sklearn.metrics import accuracy_score
 from skimage import filters
+
+
+class ColorCarrier:
+    def __init__(self):
+        self.faps_colors = {
+            'red': (0.6, 0.0, 0.2),
+            'red_light': (1.0, 0.79, 0.86),
+            'red_dark': (0.39, 0.0, 0.13),
+            'green': (0.59, 0.76, 0.22),
+            'green_light': (0.80, 0.87, 0.62),
+            'green_dark': (0.36, 0.47, 0.14),
+            'blue': (0.16, 0.38, 0.58),
+            'blue_light': (0.71, 0.82, 0.92),
+            'blue_dark': (0.12, 0.28, 0.42),
+            'black': (0.0, 0.0, 0.0),
+            'grey1': (0.87, 0.87, 0.87),
+            'grey2': (0.7, 0.7, 0.7),
+            'grey3': (0.5, 0.5, 0.5),
+            'grey4': (0.3, 0.3, 0.3)
+        }
+
+    def make_cmap(self, color_a, color_b, n_bins=256):
+        cmap = clr.LinearSegmentedColormap.from_list('custom blue', [self.faps_colors[color_a],
+                                                                     self.faps_colors[color_b]], N=n_bins)
+        return cmap
 
 
 def get_watershed(image, save_labels=False, plot=False):
