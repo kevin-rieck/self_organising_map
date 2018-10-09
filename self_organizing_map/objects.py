@@ -87,7 +87,7 @@ class SOM(object):
         self.last_bmu_qe = None
         self.state_dependent_qe_dict = {}
         self.clustered_by_watershed = False
-        self.colormap = ColorCarrier().make_cmap('yellow', 'red')
+        self.colormap = ColorCarrier().make_cmap('white', 'black')
         # INITIALIZE GRAPH
         self._graph = tf.Graph()
 
@@ -663,6 +663,7 @@ class SOM(object):
         plt.show(qe_fig)
 
     def plot_cluster_mean_spectrum(self, cluster_number, input_vector=None):
+        plt.close('all')
         centroid_grid = np.array(self.get_centroids())
         grid_shape = centroid_grid.shape
         lines = []
@@ -689,14 +690,18 @@ class SOM(object):
         lines.append(spectrum)
         labels.append('Mean spectrum of cluster')
         color_lst.append(ColorCarrier().faps_colors['black'])
+        x_axis_ticks = np.linspace(0, len(spectrum), 6)
 
         spectrum_fig, axes = plt.subplots(1, 1, figsize=(12, 4))
         for line, label, col in zip(lines, labels, color_lst):
             axes.plot(line, c=col, label=label)
-        axes.set_xlabel('Frequency band')
-        axes.set_ylabel('Amplitude')
+        axes.set_xticks(ticks=x_axis_ticks)
+        axes.set_xticklabels(labels=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+        axes.set_xlabel(r'Rel. Frequency $\frac{F}{F_{max}}$')
+        axes.set_ylabel('PSD [dB]')
         axes.legend()
-        axes.grid(alpha=0.75)
+        axes.grid()
+        plt.show(spectrum_fig)
 
     @staticmethod
     def save_figure(fig_id, filename, foldername='images'):
