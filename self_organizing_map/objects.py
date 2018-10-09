@@ -688,9 +688,9 @@ class SOM(object):
 
         spectrum = np.mean(subset, axis=0)
         lines.append(spectrum)
-        labels.append('Mean spectrum of cluster')
+        labels.append('Mean spectrum of cluster {}'.format(int(cluster_number)))
         color_lst.append(ColorCarrier().faps_colors['black'])
-        x_axis_ticks = np.linspace(0, len(spectrum), 6)
+        x_axis_ticks = np.linspace(0, len(spectrum)-1, 6)
 
         spectrum_fig, axes = plt.subplots(1, 1, figsize=(12, 4))
         for line, label, col in zip(lines, labels, color_lst):
@@ -701,6 +701,7 @@ class SOM(object):
         axes.set_ylabel('PSD [dB]')
         axes.legend()
         axes.grid()
+        spectrum_fig.tight_layout()
         plt.show(spectrum_fig)
 
     @staticmethod
