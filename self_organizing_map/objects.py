@@ -371,7 +371,8 @@ class SOM(object):
                 for i in range(self._m):
                     for j in range(self._n):
                         if self.cluster[(i, j)] not in used_numbers:
-                            ax.text(j, i, self.cluster[(i, j)], va='center', ha='center', color='w')
+                            ax.text(j, i, self.cluster[(i, j)], va='top', ha='left', color='w',
+                                    bbox={'facecolor': ColorCarrier().faps_colors['green']})
                             used_numbers.append(self.cluster[(i, j)])
                         else:
                             pass
@@ -445,7 +446,8 @@ class SOM(object):
             for i in range(self._m):
                 for j in range(self._n):
                     if cluster_array[(i, j)] not in used_numbers:
-                        ax.text(j, i, cluster_array[(i, j)], va='center', ha='center', color='w')
+                        ax.text(j, i, cluster_array[(i, j)], va='top', ha='left', color='w',
+                                bbox={'facecolor': ColorCarrier().faps_colors['green']})
                         used_numbers.append(cluster_array[(i, j)])
                     else:
                         pass
@@ -688,7 +690,7 @@ class SOM(object):
             lines.append(input_vector)
             labels.append('Input spectrum')
             color_lst.append(ColorCarrier().faps_colors['red'])
-            cluster_number = som.cluster[loc[0][0], loc[0][1]]
+            cluster_number = self.cluster[loc[0][0], loc[0][1]]
 
         centroid_grid = np.reshape(centroid_grid, (grid_shape[0]*grid_shape[1], grid_shape[-1]))
         cluster_array = self.cluster.reshape(grid_shape[0]*grid_shape[1], )
@@ -702,7 +704,7 @@ class SOM(object):
         color_lst.append(ColorCarrier().faps_colors['black'])
         x_axis_ticks = np.linspace(0, len(spectrum)-1, 6)
 
-        spectrum_fig, axes = plt.subplots(1, 1, figsize=(12, 4))
+        spectrum_fig, axes = plt.subplots(1, 1, figsize=(8, 4))
         for line, label, col in zip(lines, labels, color_lst):
             axes.plot(line, c=col, label=label)
         axes.set_xticks(ticks=x_axis_ticks)
