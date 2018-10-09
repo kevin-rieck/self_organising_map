@@ -680,7 +680,7 @@ class SOM(object):
             cluster_number = som.cluster[loc[0][0], loc[0][1]]
 
         centroid_grid = np.reshape(centroid_grid, (grid_shape[0]*grid_shape[1], grid_shape[-1]))
-        cluster_array = som.cluster.reshape(grid_shape[0]*grid_shape[1], )
+        cluster_array = self.cluster.reshape(grid_shape[0]*grid_shape[1], )
         idx = np.where(cluster_array == cluster_number)
         subset = centroid_grid[idx]
         print(subset.shape)
