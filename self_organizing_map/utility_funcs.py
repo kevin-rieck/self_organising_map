@@ -26,7 +26,14 @@ class ColorCarrier:
             'grey1': (0.87, 0.87, 0.87),
             'grey2': (0.7, 0.7, 0.7),
             'grey3': (0.5, 0.5, 0.5),
-            'grey4': (0.3, 0.3, 0.3)
+            'grey4': (0.3, 0.3, 0.3),
+            'white': (1.0, 1.0, 1.0),
+            'orange': (1.0, 0.6, 0.2),
+            'orange_light': (1.0, 0.82, 0.64),
+            'orange_dark': (0.78, 0.39, 0.0),
+            'yellow': (1.0, 0.8, 0.0),
+            'yellow_light': (1.0, 0.92, 0.58),
+            'yellow_dark': (0.78, 0.64, 0.0)
         }
 
     def make_cmap(self, color_a, color_b, n_bins=256):

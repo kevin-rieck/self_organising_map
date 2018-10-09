@@ -87,7 +87,7 @@ class SOM(object):
         self.last_bmu_qe = None
         self.state_dependent_qe_dict = {}
         self.clustered_by_watershed = False
-        self.colormap = 'magma'
+        self.colormap = ColorCarrier().make_cmap('yellow', 'red')
         # INITIALIZE GRAPH
         self._graph = tf.Graph()
 
@@ -1258,6 +1258,7 @@ class AutomatonV2:
         assert self.is_trained, 'Not trained yet -> no state information'
         self.calc_probability()
         import networkx as nx
+        custom_cmap = ColorCarrier().make_cmap('green', 'red')
         nodes = set([n1 for n1, n2 in self.state_changes.keys()]+[n2 for n1, n2 in self.state_changes.keys()])
         node_sizes = []
         edge_sizes = []
@@ -1281,7 +1282,7 @@ class AutomatonV2:
         loc = nx.shell_layout(G)
         mappable = nx.draw_networkx_nodes(G, loc, nodelist=nodes, node_size=1500,
                                           node_color=node_sizes, edgecolors='k', alpha=1.0, label=node_labels,
-                                          cmap='coolwarm', vmin=0.0, vmax=1.0)
+                                          cmap=custom_cmap, vmin=0.0, vmax=1.0)
         nx.draw_networkx_edges(G, loc, width=2.0, arrowsize=20, node_size=1500, edge_color='k')
         edge_labels = nx.get_edge_attributes(G, 'weight')
         # nx.draw_networkx_edge_labels(G, loc, label_pos=0.2, edge_labels=edge_labels)
@@ -1477,7 +1478,7 @@ if __name__ == '__main__':
     path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
     rdc = RawDataConverter(path=path_to_files, axis='y')
     test_lst = []
-    for i in range(4):
+    for i in range(1):
         file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))
         data = rdc.read_csv(file_n)
         test_lst.append(data)
@@ -1490,23 +1491,18 @@ if __name__ == '__main__':
     som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
 
     results = []
-    fig, ax = plt.subplots(3, 1)
+
     atm = AutomatonV2()
     for count, som in enumerate([som3]):
         som.fit(X_train)
-        for db in rdc._get_db_names(r'C:\Users\Apex\Desktop\Kurzversuch_8g'):
-            for i in rdc._read_db_in_chunks(path_to_db=db,
-                                            chunksize=384000):
-                pred = som.predict(i)
-                atm.train(pred)
-        # plt.style.use('ggplot')
+        preds = som.predict(X_train)
+        atm.train(preds)
         som.plot_state_dependent_qe()
         som.plot_cluster_mean_spectrum(4, input_vector=X_train[1000])
-        plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('blue_dark', 'red_dark'))
+        plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('yellow', 'red'))
         plt.show()
         # som.plot_cluster_mean_spectrum(5)
         atm.plot_time_distribution()
         atm.plot_state_durations()
         atm.plot_nx_graph()
         atm.check([0,1,2,3,4,5])
-    plt.show(fig)
