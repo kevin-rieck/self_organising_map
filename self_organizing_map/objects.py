@@ -344,7 +344,7 @@ class SOM(object):
 
         return label_list
 
-    def predict_w_umatrix(self, input_vects, learn_qe=True):
+    def predict_w_umatrix(self, input_vects, learn_qe=True, numbers_on_plot=True):
         """
         Predicts a label for each input based on the clustering as a result of the watershed transformation
         of the u-matrix
@@ -366,6 +366,16 @@ class SOM(object):
             fname = r'{}x{} clusters_{}_epochs_{}_metric_{}_lr_{}_ws.png'.format(self._m, self._n, n_cluster,
                                                                                  self._n_iterations,
                                                                                  self.metric.capitalize(), self._alpha)
+            if numbers_on_plot:
+                used_numbers = []
+                for i in range(self._m):
+                    for j in range(self._n):
+                        if self.cluster[(i, j)] not in used_numbers:
+                            ax.text(j, i, self.cluster[(i, j)], va='center', ha='center', color='w')
+                            used_numbers.append(self.cluster[(i, j)])
+                        else:
+                            pass
+            clustermap.tight_layout()
             self.save_figure(clustermap, fname)
 
             print('Clustering was by {} -> changed to watershed'.format(self.clustering_method))
@@ -434,9 +444,9 @@ class SOM(object):
             used_numbers = []
             for i in range(self._m):
                 for j in range(self._n):
-                    if cluster_array[i, j] not in used_numbers:
-                        ax.text(j, i, cluster_array[i, j], va='center', ha='center', color='w')
-                        used_numbers.append(cluster_array[i, j])
+                    if cluster_array[(i, j)] not in used_numbers:
+                        ax.text(j, i, cluster_array[(i, j)], va='center', ha='center', color='w')
+                        used_numbers.append(cluster_array[(i, j)])
                     else:
                         pass
 
@@ -1501,7 +1511,7 @@ if __name__ == '__main__':
     atm = AutomatonV2()
     for count, som in enumerate([som3]):
         som.fit(X_train)
-        preds = som.predict(X_train)
+        preds = som.predict_w_umatrix(X_train)
         atm.train(preds)
         som.plot_state_dependent_qe()
         som.plot_cluster_mean_spectrum(4, input_vector=X_train[1000])
