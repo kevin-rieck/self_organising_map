@@ -354,7 +354,7 @@ class SOM(object):
         if not self.clustered_by_watershed:
             self.cluster = get_watershed(self.get_umatrix())
             self.clustered_by_watershed = True
-            clustermap, ax = plt.subplots(1, 1)
+            clustermap, ax = plt.subplots(1, 1, figsize=(11.69, 11.69/2))
             ax.imshow(self.cluster, cmap=self.colormap)
             n_cluster = np.max(self.cluster)
             ax.set_title('Clusters = {}, Epochs = {}, Metric = {}, lr = {}'.format(n_cluster, self._n_iterations,
@@ -430,7 +430,7 @@ class SOM(object):
         clusterer.fit(grid_reshaped)
         cluster_array = clusterer.labels_.reshape((grid.shape[0], grid.shape[1]))
 
-        clustermap, ax = plt.subplots(1, 1)
+        clustermap, ax = plt.subplots(1, 1, figsize=(11.69, 11.69/2))
         ax.imshow(cluster_array, cmap=self.colormap)
         ax.set_title('Clusters = {}, Epochs = {}, Metric = {}, lr = {}'.format(n_cluster, self._n_iterations,
                                                                                self.metric.capitalize(),
@@ -709,9 +709,10 @@ class SOM(object):
             axes.plot(line, c=col, label=label)
         axes.set_xticks(ticks=x_axis_ticks)
         axes.set_xticklabels(labels=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-        axes.set_xlabel(r'Rel. Frequency $\frac{F}{F_{max}}$')
-        axes.set_ylabel('PSD [dB]')
-        axes.legend()
+        axes.set_xlabel(r'Rel. Frequency $\frac{F}{F_{max}}$', size=16)
+        axes.set_ylabel('PSD [dB]', size=16)
+        axes.tick_params(axis='both', labelsize=14)
+        axes.legend(fontsize=14)
         axes.grid()
         spectrum_fig.tight_layout()
         plt.show(spectrum_fig)
