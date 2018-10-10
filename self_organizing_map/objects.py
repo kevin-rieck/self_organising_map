@@ -716,6 +716,7 @@ class SOM(object):
         axes.grid()
         spectrum_fig.tight_layout()
         plt.show(spectrum_fig)
+        return spectrum_fig, axes
 
     @staticmethod
     def save_figure(fig_id, filename, foldername='images'):
