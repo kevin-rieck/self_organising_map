@@ -11,6 +11,9 @@ from skimage import filters
 
 
 class ColorCarrier:
+    """
+    Object that carries FAPS-colors and can make linear colormaps
+    """
     def __init__(self):
         self.faps_colors = {
             'red': (0.6, 0.0, 0.2),
@@ -139,7 +142,7 @@ def calc_umatrix(grid, dist_func):
 
 def remove_border_label(list_of_labels):
     """
-    removes label that identifies the border of the U-matrix from list
+    removes label that identifies the border of the U-matrix from list aka label zero
     :param list_of_labels: list of labels from which the label of the watershed-lines is removed
     :return: cleaned list
     """
@@ -153,7 +156,12 @@ def remove_border_label(list_of_labels):
 
 
 def mat_compare_v4(reference, to_adjust):
-
+    """
+    Adjusts numbering of list to_adjust to the reference list for maximum overlap
+    :param reference: reference list
+    :param to_adjust: list to be adjusted
+    :return: adjusted list
+    """
     reference, to_adjust = np.array(reference), np.array(to_adjust)
     print('Initial accuracy: {:.2f}'.format(accuracy_score(reference, to_adjust)))
     adjusted_array = np.copy(to_adjust)
@@ -161,7 +169,9 @@ def mat_compare_v4(reference, to_adjust):
     change_from = None
     blocked_numbers = set()
 
+    # infini-loop broken when no more numbers can be swapped
     while True:
+        # break_counter increments if a not improvement is made for one of the unique labels
         max_number = 0
         break_counter = 0
 
@@ -169,16 +179,17 @@ def mat_compare_v4(reference, to_adjust):
             counts = np.bincount(adjusted_array[reference == i])
             most_common, number = np.argmax(counts), np.max(counts)
 
+            # check if a swap can be made that improves overlap else increase break_counter
             if number > max_number and most_common not in blocked_numbers and i != most_common:
                 max_number = number
                 change_from = most_common
                 change_to = i
             else:
                 break_counter += 1
-                if break_counter == len(np.unique(reference)):
+                if break_counter == len(np.unique(reference)):  # break if no improvement for all labels
                     print('New accuracy: {:.2f}'.format(accuracy_score(reference, adjusted_array)))
                     return np.copy(adjusted_array)
-
+        # actual swapping
         adjusted_array[to_adjust == change_from] = change_to
         adjusted_array[to_adjust == change_to] = change_from
         blocked_numbers.add(change_to)

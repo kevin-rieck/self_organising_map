@@ -28,8 +28,8 @@ class SOM(object):
     _trained = False
 
     def __init__(self, m, n, dim, n_iterations=100, alpha=None, sigma=None,
-                 wanted_clusters=15, metric='manhattan', clustering_method='agg',
-                 pca_init_wanted=False, decay='exp'):
+                 wanted_clusters=15, metric='cosine', clustering_method='agg',
+                 decay='lin'):
         """
         :param m: number of rows of the map
         :param n: number of columns of the map
@@ -40,7 +40,6 @@ class SOM(object):
         :param wanted_clusters: integer number of clusters wanted for clustering
         :param metric: distance metric used to identify the best-matching unit
         :param clustering_method: string determining the algorithm used for clustering
-        :param pca_init_wanted: bool for using pca initialisation of weight vectors
         """
 
         # Assign required variables first
@@ -49,6 +48,7 @@ class SOM(object):
         else:
             self.metric = metric
 
+        # metric function for calculating U-matrix based on the metric for training
         if self.metric == 'cosine':
             self.dist_func = cosine_distances
         elif self.metric == 'manhattan':
@@ -75,7 +75,6 @@ class SOM(object):
         self._n = n
         self._alpha = alpha
         self.wanted_clusters = wanted_clusters
-        self.pca_init_wanted = pca_init_wanted
         self._n_iterations = abs(int(n_iterations))
 
         self._weightages = None
@@ -101,8 +100,7 @@ class SOM(object):
             self._location_vects = tf.constant(np.array(list(self.neuron_locations(m, n))))
 
             # PLACEHOLDERS FOR TRAINING INPUTS
-            # We need to assign them as attributes to self, since they
-            # will be fed in during training
+            # We need to assign them as attributes to self, since they will be fed in during training
 
             # The training vector
             self._vect_input = tf.placeholder("float", [dim])
@@ -118,12 +116,12 @@ class SOM(object):
             # Basically calculates the distance between every
             # neuron's weight vector and the input, and returns the
             # index of the neuron which gives the least value
+
+            # Based on the chosen metric the distance function will be assigned to self.distance-op
             if self.metric == 'manhattan':
                 distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
                 bmu_index = tf.argmin(distance, 0)
                 self.distance = tf.reduce_min(distance)
-                # debug = tf.norm(tf.subtract(self._weightage_vects, self._vect_input), ord=0.5, keepdims=True)
-                # bmu_index = tf.argmin(debug)
 
             elif self.metric == 'cosine':
                 input_1 = tf.nn.l2_normalize(self._weightage_vects, 1)
@@ -131,7 +129,6 @@ class SOM(object):
                 input_2_2d = tf.expand_dims(input_2, 1)
                 cosine_similarity = tf.reduce_sum(tf.matmul(input_1, input_2_2d), axis=1)
                 distance = 1.0 - cosine_similarity
-                # cosine_distance_op = tf.subtract(1.0, cosine_similarity)
                 bmu_index = tf.argmax(cosine_similarity, 0)
                 self.distance = tf.reduce_min(distance)
 
@@ -139,10 +136,11 @@ class SOM(object):
                 distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
                 bmu_index = tf.argmin(distance, 0)
                 self.distance = tf.reduce_min(distance)
+
             # This will extract the location of the BMU based on the BMU's index
             slice_input = tf.pad(tf.reshape(bmu_index, [1]), np.array([[0, 1]]))
             self.bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
-                                                                                     tf.int64)), [2])
+                                                                                          tf.int64)), [2])
 
             if decay == 'exp':
                 # this line will compute the decrease of alpha and sigma as a exponential decay:
@@ -156,10 +154,9 @@ class SOM(object):
 
             # Construct the op that will generate a vector with learning rates for all neurons,
             #  based on iteration number and location in comparison to the BMU.
-            bmu_distance_squares = tf.reduce_sum(tf.pow(tf.subtract(
-                self._location_vects, self.bmu_loc), 2), 1)
-            neighbourhood_func = tf.exp(tf.negative(tf.div(tf.cast(
-                bmu_distance_squares, "float32"), tf.multiply(tf.pow(_sigma_op, 2), 2))))
+            bmu_distance_squares = tf.reduce_sum(tf.pow(tf.subtract(self._location_vects, self.bmu_loc), 2), 1)
+            neighbourhood_func = tf.exp(tf.negative(tf.div(tf.cast(bmu_distance_squares, "float32"),
+                                                           tf.multiply(tf.pow(_sigma_op, 2), 2))))
             learning_rate_op = tf.multiply(_alpha_op, neighbourhood_func)
 
             # Finally, the op that will use learning_rate_op to update the weightage vectors of all neurons based on
@@ -192,40 +189,6 @@ class SOM(object):
             for j in range(n):
                 yield np.array([i, j])
 
-    def pca_init(self, input_vects):
-        """
-        Uses PCA initialization for the weight vectors
-        :param input_vects: data that is to be process in shape(n_observation, n_features)
-        :return: None
-        """
-        from sklearn.decomposition import PCA
-        pca = PCA(n_components=2, svd_solver='randomized')
-        cols = self._n
-        n_nodes = self._m * self._n
-        n_pca_components = 2
-        coordinates = np.zeros(shape=(n_nodes, n_pca_components))
-        for i in range(n_nodes):
-            coordinates[i, 0] = int(i / cols)
-            coordinates[i, 1] = int(i % cols)
-
-        maximum = np.max(coordinates, axis=0)
-
-        coordinates = 2 * (coordinates / maximum - 0.5)
-        input_mean = np.mean(input_vects, axis=0)
-        input_std = np.std(input_vects, axis=0)
-        input_vects = (input_vects - input_mean) / input_std
-
-        pca.fit(input_vects)
-        eigvec = pca.components_
-        eigval = pca.explained_variance_
-        norms = np.linalg.norm(eigvec, axis=1)
-        eigvec = ((eigvec.T / norms) * eigval).T
-        weight = input_mean + coordinates.dot(eigvec) * input_std
-
-        with self._graph.as_default():
-            assign_op = self._weightage_vects.assign(tf.convert_to_tensor(weight, dtype=tf.float32))
-        self._sess.run(assign_op)
-
     def fit(self, input_vects, *args):
         """
         Training of the SOM
@@ -233,8 +196,6 @@ class SOM(object):
         :param args: ignored, added to enable fitting in loop with other sklearn models
         :return: None, adjusts the model weight vectors saved in self._centroid_grid
         """
-        if self.pca_init_wanted:
-            self.pca_init(input_vects)
 
         for iter_no in range(self._n_iterations):
             # Train with each vector one by one
@@ -254,7 +215,6 @@ class SOM(object):
             centroid_grid[loc[0]].append(self._weightages[i])
         self._centroid_grid = centroid_grid
         self._trained = True
-        # self._sess.close()
         self._get_clusters(n_cluster=self.wanted_clusters)
 
     def get_centroids(self):
@@ -289,11 +249,10 @@ class SOM(object):
 
         return to_return
 
-    def _get_bmu(self, input_vects, plot_wanted=False):
+    def _get_bmu(self, input_vects):
         """
         Method that determines the location of the BMU for each input vector
         :param input_vects: data that is to be process in shape(n_observation, n_features)
-        :param plot_wanted: whether the quantization error map should be plotted
         :return: list of x,y locations of the BMU for each input
         """
 
@@ -303,11 +262,12 @@ class SOM(object):
         quantization_error = []
 
         # Distance of the BMU is calculated using the distance function that was given to __init__
+        # feed_dict requires a number for self._iter_input but it has no effect because train op is not called
         for vect in input_vects:
             loc = self._sess.run(self.bmu_loc, feed_dict={self._vect_input: vect,
-                                                          self._iter_input: 42})
+                                                          self._iter_input: self._n_iterations})
             qe = self._sess.run(self.distance, feed_dict={self._vect_input: vect,
-                                                          self._iter_input: 42})
+                                                          self._iter_input: self._n_iterations})
             to_return.append(loc)
             quantization_error.append(qe)
 
@@ -347,7 +307,7 @@ class SOM(object):
     def predict_w_umatrix(self, input_vects, learn_qe=True, numbers_on_plot=True):
         """
         Predicts a label for each input based on the clustering as a result of the watershed transformation
-        of the u-matrix
+        of the u-matrix, saves figure of clustermap
         :param input_vects: data that is to be process in shape(n_observation, n_features)
         :return: list of labels, one for each input
         """
@@ -403,7 +363,7 @@ class SOM(object):
             self.fit(input_vects)
 
         bmu_list = self._get_bmu(input_vects)
-        return np.array(bmu_list, dtype=np.uint8)
+        return np.array(bmu_list, dtype=np.uint16)
 
     def _get_clusters(self, n_cluster, clustering_method=None, numbers_wanted=True):
         """
@@ -486,9 +446,10 @@ class SOM(object):
 
         return self.umatrix
 
-    def hit_histo(self):  # todo eventuell 3d bar plot
+    def hit_histo(self):
         """
-        Plots a hit histogram based on the BMUs of the last predictions and plots it
+        Plots a hit histogram based on the BMUs of the last predictions
+        Growing circles represent number of hits and the nackground is the clustermap
         :return: None, plots hit histogram
         """
         assert self._last_bmus is not None
@@ -502,6 +463,11 @@ class SOM(object):
         ax = fig.add_subplot(111)
         cluster_map = ax.imshow(self.cluster, cmap=self.colormap)
         scatter = ax.scatter(x, y, s=s, edgecolors='w', facecolors='k', alpha=0.5)
+
+        fname = r'histo_{}x{} som_{}_epochs_{}_metric_{}_lr_{}.png'.format(self._m, self._n, self.__class__.__name__,
+                                                                           self._n_iterations, self.metric.capitalize(),
+                                                                           self._alpha)
+        self.save_figure(fig, fname)
         plt.show(fig)
 
     def override_clusters(self):
@@ -533,38 +499,6 @@ class SOM(object):
         plt.imshow(self.cluster)
         plt.show()
 
-    def export_grid(self, destination):
-        """
-        Exports the weight vectors of a trained SOM as pickle file for importing in a different map
-        :param destination: path to location of the output file
-        :return: None, saves weight vectors as pickle
-        """
-        import pickle
-        assert isinstance(destination, str)
-        with open(destination, 'wb') as handle:
-            pickle.dump(self._centroid_grid, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        print('Export successful')
-
-    @classmethod
-    def import_grid(cls, src, wanted_clusters):
-        """
-        Inits a dummy SOM whose model vectors are imported from a supplied pickle file
-        WARNING the dummy should not be fit() to new values as the size and other learning parameters are not imported
-        :param src: path to the source file
-        :param wanted_clusters: number of clusters for the clustering of the imported grid
-        :return: a SOM instance with imported weight vectors and new clustering
-        """
-        print('!WARNING the dummy should not be fit() to new values as the size and'
-              ' other learning parameters are not imported!')
-        import pickle
-        assert isinstance(src, str)
-        to_return = SOM(2, 2, 100, wanted_clusters=wanted_clusters)
-        to_return._trained = True
-        with open(src, 'rb') as handle:
-            to_return._centroid_grid = pickle.load(handle)
-        to_return._get_clusters(to_return.wanted_clusters)
-        return to_return
-
     def animate_bmu_trajectory(self, tail=5):
         """
         Creates animation of the BMU trajectory
@@ -592,45 +526,6 @@ class SOM(object):
                                                  fargs=(data, hits, tail), interval=100)
 
         plt.show()
-
-    def show_3d_pca(self):
-        """
-        Function that calculates the first three principal components and plots the data along those dims
-        NOT RELEVANT FOR FUNCTION
-        :return: None
-        """
-        assert self._trained
-        pca = PCA(n_components=5, random_state=42)
-        grid = np.array(self.get_centroids())
-        grid_reshaped = np.reshape(grid, (-1, grid.shape[-1]))
-        components = pca.fit_transform(grid_reshaped)
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(components[:, 0], components[:, 1], components[:, 2], marker='o', alpha=0.5,
-                   c=components[:, 3], s=components[:, 4], cmap=self.colormap)
-        plt.show(fig)
-
-    def show_mds(self):
-        assert self._trained
-        grid = np.array(self.get_centroids())
-        grid_reshaped = np.reshape(grid, (-1, grid.shape[-1]))
-        precomputed = self.dist_func(grid_reshaped)
-        mds = MDS(n_components=2, random_state=42, dissimilarity='precomputed')
-        embedded_points = mds.fit_transform(precomputed)
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        ax.scatter(embedded_points[:, 0], embedded_points[:, 1], marker='o', alpha=0.5)
-        plt.show(fig)
-
-    def outlier_detect_iso_forest(self, input_vects):
-        assert self._trained
-        grid = np.array(self.get_centroids(), dtype=np.float32)
-        grid_reshaped = np.reshape(grid, (-1, grid.shape[-1]))
-        iso_for = IsolationForest(random_state=42, contamination=0.0)
-        iso_for.fit(grid_reshaped)
-        outliers = iso_for.predict(input_vects)
-        return len(np.where(outliers == -1))
 
     def _state_dependent_qe(self, label_list):
         """
@@ -729,190 +624,10 @@ class SOM(object):
         print('Saving figure in {}'.format(str(os.path.abspath(folder_path))))
 
 
-class PLSOM(SOM):
-    """
-    Parameterless implementation of the Self-organizing map algorithm
-    Is independent of learning rate, solely depends on the initial neighbourhood size
-    Otherwise identical to SOM
-    """
-
-    _trained = False
-
-    def __init__(self, m, n, dim, n_iterations=100, sigma=None,
-                 wanted_clusters=15, metric='manhattan', clustering_method='agg'):
-        """
-        Initializes all necessary components of the TensorFlow
-        Graph.
-
-        m X n are the dimensions of the SOM. 'n_iterations' should
-        should be an integer denoting the number of iterations undergone
-        while training.
-        'dim' is the dimensionality of the training inputs.
-        'alpha' is a number denoting the initial time(iteration no)-based
-        learning rate. Default value is 0.3
-        'sigma' is the the initial neighbourhood value, denoting
-        the radius of influence of the BMU while training. By default, its
-        taken to be half of max(m, n).
-        """
-
-        # Assign required variables first
-        if metric not in ['cosine', 'euclidean', 'manhattan']:
-            raise ValueError('Metric must be either cosine, euclidean or manhattan.')
-        self.metric = metric
-
-        if self.metric == 'cosine':
-            self.dist_func = cosine_distances
-        elif self.metric == 'manhattan':
-            self.dist_func = manhattan_distances
-        else:
-            self.dist_func = euclidean_distances
-
-        self.clustering_method = clustering_method
-        self.umatrix = None
-        self._m = m
-        self._n = n
-        self.wanted_clusters = wanted_clusters
-        self.cluster = None
-        self._last_bmus = None
-
-        if sigma is None:
-            sigma = max(m, n) / 2.0
-        else:
-            sigma = float(sigma)
-        self._n_iterations = abs(int(n_iterations))
-
-        # INITIALIZE GRAPH
-        self._graph = tf.Graph()
-
-        # POPULATE GRAPH WITH NECESSARY COMPONENTS
-        with self._graph.as_default():
-
-            # VARIABLES AND CONSTANT OPS FOR DATA STORAGE
-
-            # Randomly initialized weightage vectors for all neurons,
-            # stored together as a matrix Variable of size [m*n, dim]
-
-            self._weightage_vects = tf.Variable(tf.random_normal([m * n, dim], seed=666))
-
-            # Matrix of size [m*n, 2] for SOM grid locations
-            # of neurons
-            self._location_vects = tf.constant(np.array(list(self.neuron_locations(m, n))))
-
-            # PLACEHOLDERS FOR TRAINING INPUTS
-            # We need to assign them as attributes to self, since they
-            # will be fed in during training
-
-            # The training vector
-            self._vect_input = tf.placeholder(tf.float32, [dim])
-            self.previous_r = tf.placeholder(tf.float32, shape=())
-            # Iteration number
-            self._iter_input = tf.placeholder(tf.float32)
-
-            # CONSTRUCT TRAINING OP PIECE BY PIECE
-            # Only the final, 'root' training op needs to be assigned as
-            # an attribute to self, since all the rest will be executed
-            # automatically during training
-
-            # To compute the Best Matching Unit given a vector
-            # Basically calculates the Euclidean distance between every
-            # neuron's weightage vector and the input, and returns the
-            # index of the neuron which gives the least value
-            if self.metric == 'manhattan':
-                distance = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects, self._vect_input)), axis=1)
-                min_distance = tf.reduce_min(distance)
-                bmu_index = tf.argmin(distance)
-
-            elif self.metric == 'cosine':
-                input_1 = tf.nn.l2_normalize(self._weightage_vects, 0)  # todo VALIDATE
-                input_2 = tf.nn.l2_normalize(self._vect_input, 0)
-                cosine_similarity = tf.reduce_sum(tf.multiply(input_1, input_2), axis=1)
-                distance = 1.0 - tf.abs(cosine_similarity)
-                min_distance = tf.reduce_min(distance)
-                bmu_index = tf.argmax(cosine_similarity)
-
-            else:
-                distance = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects, self._vect_input), 2), 1))
-                min_distance = tf.reduce_min(distance)
-                bmu_index = tf.argmin(distance)
-
-            # This will extract the location of the BMU based on the BMU's
-            # index
-            slice_input = tf.pad(tf.reshape(bmu_index, [1]), np.array([[0, 1]]))
-            bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
-                                                                                     tf.int64)), [2])
-
-            # _____#
-            self.r = tf.maximum(min_distance, self.previous_r)
-            epsilon_op = tf.div(min_distance, self.r)
-            # _____#
-            # To compute the alpha and sigma values based on iteration
-            # number
-            theta_min = 1.0
-            # learning_rate_op = tf.exp(tf.negative(tf.div(self._iter_input**2, self._n_iterations)))
-            # learning_rate_op = tf.exp(tf.negative(self._iter_input))
-            _sigma_op = (sigma - theta_min) * tf.log(1+epsilon_op*(tf.constant(np.e) - 1)) + theta_min
-            # tf.multiply(sigma, epsilon_op)
-
-            # Construct the op that will generate a vector with learning
-            # rates for all neurons, based on iteration number and location
-            # wrt BMU.
-            bmu_distance_squares = tf.reduce_sum(tf.pow(tf.subtract(
-                self._location_vects, bmu_loc), 2), 1)
-            neighbourhood_func = tf.exp(tf.negative(tf.div(tf.cast(
-                bmu_distance_squares, "float32"), tf.pow(_sigma_op, 2))))
-            learning_rate_op = tf.multiply(epsilon_op, neighbourhood_func)
-
-            # Finally, the op that will use learning_rate_op to update
-            # the weightage vectors of all neurons based on a particular
-            # input
-            learning_rate_multiplier = tf.expand_dims(learning_rate_op, -1)
-            weightage_delta = tf.multiply(learning_rate_multiplier,
-                                          tf.subtract(self._vect_input, self._weightage_vects))
-            new_weightages_op = tf.add(self._weightage_vects, weightage_delta)
-            self._training_op = tf.assign(self._weightage_vects, new_weightages_op)
-            # INITIALIZE SESSION
-            self._sess = tf.Session()  # config=tf.ConfigProto(log_device_placement=True)
-
-            # INITIALIZE VARIABLES
-            init_op = tf.global_variables_initializer()
-            self._sess.run(init_op)
-
-    def fit(self, input_vects, *args):
-        """
-        Trains the SOM.
-        'input_vects' should be an iterable of 1-D NumPy arrays with
-        dimensionality as provided during initialization of this SOM.
-        Current weightage vectors for all neurons(initially random) are
-        taken as starting conditions for training.
-        """
-        r_input = 0.0
-        # Training iterations
-        for iter_no in range(self._n_iterations):
-            # Train with each vector one by one
-            t0 = time.time()
-            for counter, input_vect in enumerate(input_vects):
-
-                    _, r_input = self._sess.run([self._training_op, self.r],
-                                                feed_dict={self._vect_input: input_vect,
-                                                           self._iter_input: iter_no,
-                                                           self.previous_r: r_input})
-
-            t1 = time.time() - t0
-            print('EPOCH: {} --- TIME {:.3f}s'.format(iter_no, t1))
-
-        # Store a centroid grid for easy retrieval later on
-        centroid_grid = [[] for _ in range(self._m)]
-        self._weightages = list(self._sess.run(self._weightage_vects))
-        self._locations = list(self._sess.run(self._location_vects))
-        for i, loc in enumerate(self._locations):
-            centroid_grid[loc[0]].append(self._weightages[i])
-        self._centroid_grid = centroid_grid
-        self._trained = True
-        self._sess.close()
-        self._get_clusters(n_cluster=self.wanted_clusters)
-
-
 class RawDataConverter:
+    """
+    Data processing pipelin in form of an object
+    """
     def __init__(self, df=None, path=None, sampling_freq=1600, NFFT=512, n_overlap_factor=0.5, axis='y'):
         if path is None:
             self.dataframe = df
@@ -930,11 +645,17 @@ class RawDataConverter:
             self.axis = axis
 
     def convert_to_stft(self, norm='manhattan'):
+        """
+        Method for labelled data; does STFT of self.dataframe and returns the transformed data
+        :param norm: str 'manhattan', 'euclidean' if STFT should be applied to norm of x,y,z instead of single axis
+        :return: stf-transformed data
+        """
         if norm not in ['manhattan', 'euclidean']:
             raise ValueError('Norm to use must be manhattan or euclidean')
 
         self.dataframe.reset_index(inplace=True, drop=True)
 
+        # if all sensor axes are wanted they are transformed using a vector norm
         if self.axis == 'all':
             if norm == 'manhattan':
                 self.dataframe['all'] = (self.dataframe['x'] + self.dataframe['y'] + self.dataframe['z'])
@@ -961,6 +682,7 @@ class RawDataConverter:
 
             # create label array
             state_list = []
+            # loop for each time frame to extract most common label and use it as label for this timeframe
             for counter, frame in enumerate(time_frames):
                 if counter == 0:
                     bool_mask = self.dataframe['time'] <= frame
@@ -969,6 +691,8 @@ class RawDataConverter:
                                 (self.dataframe['time'] > time_frames[counter - 1])
                 state = self.dataframe.loc[bool_mask, 'label'].value_counts().idxmax()
                 state_list.append(state)
+
+            # concatenating the label array with the STFT data horizontally
             state_list = np.array(state_list, dtype=np.int32)
             state_list = np.expand_dims(state_list, axis=1)
             array_with_label = np.hstack([spectrogram_data, state_list])
@@ -999,6 +723,8 @@ class RawDataConverter:
 
             train_arrays, test_arrays = [], []
 
+            # read in samples as csv with name sample{}.csv and scale if wanted and
+            # return concatenated data of all samples
             for i in train_samples:
                 sample = 'sample{}.csv'.format(int(i))
                 path_for_convert = os.path.join(path, sample)
@@ -1031,13 +757,26 @@ class RawDataConverter:
             print('Check sample numbers (should be iterable) and correctness of path')
 
     def read_csv(self, path_to_sample, return_norm=False, scale=True, norm='manhattan'):
-
+        """
+        Method to read in samples without labels and STF-transform them
+        :param path_to_sample: complete path to csv file
+        :param return_norm: whether norm of x,y,z should be used
+        :param scale: scaling of data before STFT
+        :param norm: if norm wanted which norm
+        :return: STF-transformed data as np.ndarray
+        """
         file_loc = r'{}'.format(path_to_sample)
         df = pd.read_csv(file_loc)
 
         return self._convert_df(df=df, return_norm=return_norm, norm=norm, scaling_before_stft=scale)
 
     def _read_db_in_chunks(self, path_to_db, chunksize):
+        """
+        Method for connecting to a DB and reading it in chunks with subsequent STFT of the chunks
+        :param path_to_db: path to wanted DB
+        :param chunksize: how many rows to read in each chunk
+        :return: STF-transformed data in form of a generator
+        """
         assert isinstance(path_to_db, str), 'Path must be str'
         if path_to_db[-3:] != '.db':
             path_to_db = path_to_db + '.db'
@@ -1051,7 +790,15 @@ class RawDataConverter:
         for df in df_gen:
             yield self._convert_df(df)
 
-    def _convert_df(self, df, return_norm=True, norm='manhattan', scaling_before_stft=True):
+    def _convert_df(self, df, return_norm=False, norm='manhattan', scaling_before_stft=True):
+        """
+        Method that converts an internal pandas dataframe using STFT
+        :param df: pandas DataFrame object to convert, must have x,y,z comluns
+        :param return_norm: whether norm of x,y,z should be calculated before STFT of that norm
+        :param norm: which norm, 'manhattan', 'euclidean'
+        :param scaling_before_stft: whether data should be standard scaled before STFT
+        :return: ndarray of STFT data shape(timeframes, features)
+        """
         if norm not in ['manhattan', 'euclidean'] and return_norm:
             raise ValueError('Norm to use must be manhattan or euclidean')
 
@@ -1095,6 +842,11 @@ class RawDataConverter:
 
     @staticmethod
     def _get_db_names(folder_path):
+        """
+        Finding the names of .db files in a directory and its subdirectory (only one level deep!!!)
+        :param folder_path: path to directory to search
+        :return: list of strings describing paths to .db files in searched directory
+        """
         paths = []
 
         entries = os.scandir(folder_path)
@@ -1128,10 +880,16 @@ class AutomatonV2:
         self.state_change_proba = {}
         self.total_durations = {}
         self.state_kde = {}
-        self.colormap = 'magma'
+        self.colormap = ColorCarrier().make_cmap('white', 'black')
 
     @staticmethod
     def get_transitions(array):
+        """
+        Method that returns an array of the transitions of the given array as cumulative sum:
+        E.g. [3, 3, 3, 9, 9, 5] -> [1, 1, 1, 2, 2, 3]
+        :param array: numpy ndarray with datatype = np.int
+        :return: nd array with transitions
+        """
         array1 = np.array(array)
         array2 = np.roll(array1, 1)
         transitions = np.cumsum((array1 != array2).astype(int))
@@ -1145,16 +903,19 @@ class AutomatonV2:
         state_dict = {}
 
         for number in np.unique(transitions):
-            state = data[np.where(transitions == number)][0]
-            time = data[np.where(transitions == number)].size # * self.time_frame
+            state = data[np.where(transitions == number)][0]  # state number for each segment between transitions
+            time = data[np.where(transitions == number)].size  # total time frames during which a state is active
 
+            # save number of for each state in dict
             try:
                 state_dict[state].append(time)
             except KeyError:
                 state_dict[state] = [time]
 
         if train:
-            self.n_transitions.append(np.max(transitions) - 1)
+            self.n_transitions.append(np.max(transitions) - 1)  # save total number of transitions of given array
+
+            # save individual state durations and total state durations as number of time frames in dicts:
             for key, value in state_dict.items():
                 try:
                     self.state_durations[key].extend(value)
@@ -1170,6 +931,10 @@ class AutomatonV2:
             return state_dict
 
     def plot_state_durations(self):
+        """
+        Plots total duration of each state that was learned via train() as bar plot with error markers
+        :return: None
+        """
         assert self.is_trained, 'Not trained yet -> no state information'
         x = self.total_durations.keys()
         y = [np.mean(value) for value in self.total_durations.values()]
@@ -1190,8 +955,18 @@ class AutomatonV2:
         self.is_trained = True
 
     def _which_transitions(self, data, train=False):
+        """
+        Keeps track of which transitions were made in the data
+        Eg: Saves how many times a transition tuple(x,y)->number was made
+        Saves the sequence of transitions (x, y) -> (y, z) -> (z, x)
+        Saves which destinations were reached from which origin: (x, y) and (x, z) dict[x] = [y, z]
+        :param data: numpy ndarray with datatype = np.int
+        :param train: whether transitions should be learned by class ie. saved in attributes
+        :return: list of state change tuples (origin, destination)
+        """
         if not isinstance(data, np.ndarray):
             data = np.array(data, dtype=np.uint8)
+
         transitions = self.get_transitions(data)
         state_changes = []
         state_lst = []
@@ -1224,6 +999,11 @@ class AutomatonV2:
             return state_changes
 
     def calc_probability(self, plot_wanted=False):
+        """
+        Calculates transition probability matrix and can plot the results
+        :param plot_wanted: whether plot is wanted
+        :return: None, saves probability matrix as attribute self.state_change_proba[origin]=dict[6:0.5, 2:0.5]
+        """
         assert self.is_trained, 'Not trained yet -> no state information'
         for key, value in self.out_transitions.items():
             tmp_dict = {}
@@ -1235,19 +1015,7 @@ class AutomatonV2:
             self.state_change_proba[key] = tmp_dict
 
         if plot_wanted:
-            '''
-            max_value = max(self.state_change_proba.keys())
-            num_rows = int((1 + max_value) // 4)
-            if num_rows % 4:
-                num_rows += 1
-            fig, axes = plt.subplots(nrows=num_rows, ncols=4, )
-            axes = axes.ravel()
-            for ax in axes:
-                ax.axis('off')
-            for key, value in self.state_change_proba.items():
-                axes[int(key)].pie(value.values(), labels=value.keys())
-            plt.show()
-            '''
+
             length_array = len(self.state_change_proba.keys())
             probability_matrix = np.zeros(shape=(length_array, length_array), dtype=np.float32)
             for origin, values in self.state_change_proba.items():
@@ -1258,23 +1026,12 @@ class AutomatonV2:
             fig, ax = plt.subplots(1, 1)
             ax.matshow(probability_matrix, cmap=self.colormap)
             plt.show(fig)
-    '''
-    def plot_state_change_prob(self, number):
-        lst = self.state_change_sequence[number].copy()
-        counter = Counter(lst)
-        labels_for_pie = []
-        sizes_for_pie = []
-        for transition, amount in counter.most_common():
-            labels_for_pie.append(transition)
-            sizes_for_pie.append(amount)
-
-        fig, ax = plt.subplots(1, 1)
-        ax.pie(sizes_for_pie, labels=labels_for_pie, autopct='%1.1f%%')
-        ax.axis('equal')
-        plt.show(fig)
-    '''
 
     def plot_nx_graph(self):
+        """
+        Plots Automaton as network graph
+        :return: None, shows plot
+        """
         assert self.is_trained, 'Not trained yet -> no state information'
         self.calc_probability()
         import networkx as nx
@@ -1314,16 +1071,20 @@ class AutomatonV2:
         plt.show()
 
     def plot_time_distribution(self):
+        """
+        Plots KDE of the time duration of individual states
+        :return: None, plots diagram
+        """
         assert self.is_trained, 'Not trained yet -> no state information'
         self._generate_kde()
 
         n_plots = len(self.state_durations.keys())
-        n_rows = 4
-        n_cols = n_plots//4
+        n_cols = 4
+        n_rows = n_plots//4
         if n_plots % 4:
             n_cols += 1
 
-        duration_fig, ax = plt.subplots(n_rows, n_cols)
+        duration_fig, ax = plt.subplots(n_rows, n_cols, figsize=(20, 15))
         axes = ax.ravel()
         plot_counter = 0
 
@@ -1333,15 +1094,23 @@ class AutomatonV2:
             start, end = value_as_array.min(), value_as_array.max()
             x_grid = np.linspace(start, end, 50)[:, None]
             curve = np.exp(kde.score_samples(x_grid))
-            axes[plot_counter].plot(curve, label='{}'.format(key))
+            axes[plot_counter].plot(curve, label='{}'.format(key), c=ColorCarrier().faps_colors['green'])
             # sns.distplot(value_as_array, ax=axes[key], rug=False, kde=True, label='State: {}'.format(int(key)))
             axes[plot_counter].set_xlabel('Timeframe')
+            axes[plot_counter].set_ylabel('Prob. Density')
             axes[plot_counter].legend(loc='upper right', fontsize='small')
             plot_counter += 1
 
         plt.show(duration_fig)
 
-    def _generate_kde(self):
+        return duration_fig, axes
+
+    def _generate_kde(self, bandwidth=1.0):
+        """
+        Performs Kernel Density Estimation of the durations of individual states
+        Gaussian Kernel and bandwith of 1.0 -> can be adjusted
+        :return: None, saves a KDE for each state in self.state_kde dict
+        """
         from sklearn.neighbors import KernelDensity
 
         if self.state_durations is None:
@@ -1357,13 +1126,18 @@ class AutomatonV2:
 
             # print('State: {}, bandwidth: {}'.format(key, best_params['bandwidth']))
 
-            kde = KernelDensity(bandwidth=1.0)
+            kde = KernelDensity(bandwidth=bandwidth)
             kde.fit(value_as_array[:, None])
             # stores the trained KDE for each state
             self.state_kde[key] = kde
         print(self.state_kde)
 
     def check_total_state_duration(self, data):
+        """
+        Checks if the total cumulative state durations are within learned limits
+        :param data: data to check: ndarray of integers
+        :return: None, prints warnings
+        """
         print('--- Checking total state durations ---')
 
         total_state_duration = self._get_state_durations(data, train=False)
@@ -1383,6 +1157,11 @@ class AutomatonV2:
                 print('Observation has no state {}'.format(key))
 
     def check_changes_valid(self, data):
+        """
+        Checks if the transitions made in the supplied sequence are valid according to learned transitions
+        :param data: data to check: ndarray of integers
+        :return: None, prints warnings
+        """
         print('--- Checking if state changes valid ---')
 
         state_changes = self._which_transitions(data, train=False)
@@ -1393,6 +1172,11 @@ class AutomatonV2:
                 print('Unknown transition {}->{} occurred'.format(inv[0], inv[1]))
 
     def check_state_remaining_error(self, data):
+        """
+        Checks if a state exceeds the maximum learned threshold
+        :param data: data to check: ndarray of integers
+        :return: None, prints warnings
+        """
         print('--- Checking checking state remaining error ---')
 
         state_dict = self._get_state_durations(data=data, train=False)
@@ -1414,6 +1198,10 @@ class AutomatonV2:
 
 
 class Splitter:
+    """
+    Class that splits a .db into samples and saves them as .csv files
+    Splitting is based on inactivity for more than 15 seconds detected by a RMS value threshold
+    """
     def __init__(self, sampling_rate=1600):
         self.srate = sampling_rate
         self.data_gen = None
