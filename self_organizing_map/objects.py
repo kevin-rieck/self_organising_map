@@ -9,13 +9,14 @@ import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from sklearn import cluster
-from sklearn.decomposition import PCA
-from sklearn.ensemble import IsolationForest
-from sklearn.manifold import MDS
 from sklearn.metrics.pairwise import cosine_distances, euclidean_distances, manhattan_distances
 from sklearn.preprocessing import StandardScaler
 
 from self_organizing_map.utility_funcs import get_watershed, calc_umatrix, remove_border_label, ColorCarrier
+# from utility_funcs import get_watershed, calc_umatrix, remove_border_label, ColorCarrier
+
+
+# TODO for visualization see TensorBoard, for SOM see http://www.ai-junkie.com/ann/som/som1.html
 
 
 class SOM(object):
@@ -33,11 +34,11 @@ class SOM(object):
         """
         :param m: number of rows of the map
         :param n: number of columns of the map
-        :param dim: dimensionality of the data to process
+        :param dim: number of features
         :param n_iterations: integer number of epochs that are trained
         :param alpha: learning rate
         :param sigma: initial neighbourhood radius
-        :param wanted_clusters: integer number of clusters wanted for clustering
+        :param wanted_clusters: integer number of clusters wanted for clustering (only for kmeans and hierarchical clustering)
         :param metric: distance metric used to identify the best-matching unit
         :param clustering_method: string determining the algorithm used for clustering
         """
@@ -77,15 +78,15 @@ class SOM(object):
         self.wanted_clusters = wanted_clusters
         self._n_iterations = abs(int(n_iterations))
 
-        self._weightages = None
-        self._locations = None
+        self._weightages = None  # list of trained model vectors
+        self._locations = None  # list of neuron locations
         self._centroid_grid = None
-        self.cluster = None
+        self.cluster = None  # int nd array of clusters with shape of som
         self._last_bmus = None
         self.umatrix = None
-        self.last_bmu_qe = None
-        self.state_dependent_qe_dict = {}
-        self.clustered_by_watershed = False
+        self.last_bmu_qe = None  # list of qes of the last input list
+        self.state_dependent_qe_dict = {}  # dict of the active states and their mean qe for the last input list
+        self.clustered_by_watershed = False  # bool if clustered by watershed
         self.colormap = ColorCarrier().make_cmap('white', 'black')
         # INITIALIZE GRAPH
         self._graph = tf.Graph()
@@ -203,19 +204,19 @@ class SOM(object):
             for input_vect in input_vects:
                 self._sess.run(self._training_op,
                                feed_dict={self._vect_input: input_vect,
-                                          self._iter_input: iter_no})
+                                          self._iter_input: iter_no})  # number is necessary for learning rate
             t1 = time.time() - t0
             print('EPOCH: {} --- TIME {:.3f}s'.format(iter_no, t1))
 
         # Store a centroid grid for easy retrieval later on, closing the Session and performing clustering
-        centroid_grid = [[] for _ in range(self._m)]
+        centroid_grid = [[] for _ in range(self._m)]  # same data as self._weightages but better accessibility
         self._weightages = list(self._sess.run(self._weightage_vects))
         self._locations = list(self._sess.run(self._location_vects))
         for i, loc in enumerate(self._locations):
             centroid_grid[loc[0]].append(self._weightages[i])
         self._centroid_grid = centroid_grid
         self._trained = True
-        self._get_clusters(n_cluster=self.wanted_clusters)
+        self._calc_clusters(n_cluster=self.wanted_clusters)
 
     def get_centroids(self):
         """
@@ -226,6 +227,7 @@ class SOM(object):
             raise ValueError("SOM not trained yet")
         return self._centroid_grid
 
+    # TODO ev. remove method use fit_transform instead
     def map_vects(self, input_vects):
         """
         Maps each input vector to the relevant neuron in the SOM
@@ -280,7 +282,7 @@ class SOM(object):
 
         return to_return
 
-    def predict(self, input_vects, learn_qe=True):
+    def predict(self, input_vects, save_qes=True):
         """
         Predicts a cluster label for each input in input_vects based on the clusters in self.cluster
         :param input_vects: data that is to be process in shape(n_observation, n_features)
@@ -290,7 +292,7 @@ class SOM(object):
             raise ValueError("SOM not trained yet")
 
         if self.clustered_by_watershed:
-            self._get_clusters(n_cluster=self.wanted_clusters)
+            self._calc_clusters(n_cluster=self.wanted_clusters)
             print('Clustering was by watershed -> changed to {}'.format(self.clustering_method))
 
         self._last_bmus = self._get_bmu(input_vects)
@@ -299,12 +301,12 @@ class SOM(object):
         for entry in self._last_bmus:
             label_list.append(self.cluster[entry[0], entry[1]])
 
-        if learn_qe:
+        if save_qes:
             self._state_dependent_qe(label_list)
 
         return label_list
 
-    def predict_w_umatrix(self, input_vects, learn_qe=True, numbers_on_plot=True):
+    def predict_w_umatrix(self, input_vects, save_qes=True, numbers_on_plot=True):
         """
         Predicts a label for each input based on the clustering as a result of the watershed transformation
         of the u-matrix, saves figure of clustermap
@@ -348,11 +350,12 @@ class SOM(object):
             label_list.append(self.cluster[entry[0], entry[1]])
         label_list = remove_border_label(label_list)
 
-        if learn_qe:
+        if save_qes:
             self._state_dependent_qe(label_list)
 
         return label_list
 
+    # TODO is used for hit histogram and animation -> does not return the states
     def fit_transform(self, input_vects):
         """
         Trains the SOM if untrained and returns the BMU coordinates for given input vectors
@@ -365,12 +368,13 @@ class SOM(object):
         bmu_list = self._get_bmu(input_vects)
         return np.array(bmu_list, dtype=np.uint16)
 
-    def _get_clusters(self, n_cluster, clustering_method=None, numbers_wanted=True):
+    def _calc_clusters(self, n_cluster, clustering_method=None, numbers_wanted=True):
         """
         Performs clustering based on sklearn's agglomerative or k-means clustering
         Saves plot of the clustering using imshow
         :param n_cluster: number of desired clusters
         :param clustering_method: string determining the clustering algorithm, either 'agg', 'kmeans'
+        :param numbers_wanted: bool if image should also show the cluster numbers
         :return: the cluster array, also saved in self.cluster
         """
         grid = np.array(self.get_centroids())
@@ -418,7 +422,7 @@ class SOM(object):
 
         self.clustered_by_watershed = False
         self.cluster = cluster_array
-        return cluster_array
+        return np.copy(cluster_array)
 
     def get_umatrix(self):
         """
@@ -529,7 +533,7 @@ class SOM(object):
 
     def _state_dependent_qe(self, label_list):
         """
-        Function that calculates the qunatization error specific to each cluster
+        Function that calculates the quantization error specific to each cluster
         The average QE for each state and each sample (1 pump) is saved in a dictionary
         :param label_list: List of the labels of predicted by the SOM
         :return: None, saves in dictionary self.state_dependent_qe_dict
@@ -570,6 +574,12 @@ class SOM(object):
         plt.show(qe_fig)
 
     def plot_cluster_mean_spectrum(self, cluster_number, input_vector=None):
+        """
+        plot function for comapring input and mean freq spectrum of corresponding bmu
+        :param cluster_number: show mean spectrum of this cluster number
+        :param input_vector: calc best cluster and calc bmu and plots mean spectrum (ignores cluster_number)
+        :return: figure, axes
+        """
         plt.close('all')
         centroid_grid = np.array(self.get_centroids())
         grid_shape = centroid_grid.shape
@@ -873,10 +883,10 @@ class AutomatonV2:
         # self.time_frame = time_frame
         self.n_transitions = []
         self.state_durations = {}
-        self.state_changes = {}
-        self.state_change_sequence = {}
+        self.num_state_changes = {}  # number of occurrences of specific transition
+        self.state_change_sequence = {}  # TODO ev remove -> not used
         self.is_trained = False
-        self.out_transitions = {}
+        self.out_transitions = {}  # key -> start label, value -> destination label
         self.state_change_proba = {}
         self.total_durations = {}
         self.state_kde = {}
@@ -891,8 +901,8 @@ class AutomatonV2:
         :return: nd array with transitions
         """
         array1 = np.array(array)
-        array2 = np.roll(array1, 1)
-        transitions = np.cumsum((array1 != array2).astype(int))
+        array2 = np.roll(array1, 1)  # shifts the array one position to the right
+        transitions = np.cumsum((array1 != array2).astype(int))  # number of transitions at the specific position
         return transitions
 
     def _get_state_durations(self, data, train=False):
@@ -953,6 +963,8 @@ class AutomatonV2:
         self._get_state_durations(data, train=True)
         self._which_transitions(data, train=True)
         self.is_trained = True
+        self.calc_probability(plot_wanted=True)
+        pass
 
     def _which_transitions(self, data, train=False):
         """
@@ -981,9 +993,9 @@ class AutomatonV2:
         if train:
             for counter, value in enumerate(state_changes):
                 try:
-                    self.state_changes[value] += 1
+                    self.num_state_changes[value] += 1
                 except KeyError:
-                    self.state_changes[value] = 1
+                    self.num_state_changes[value] = 1
 
                 try:
                     self.state_change_sequence[counter].append(value)
@@ -1016,11 +1028,14 @@ class AutomatonV2:
 
         if plot_wanted:
 
-            length_array = len(self.state_change_proba.keys())
+            length_array = max(self.state_change_proba.keys())
             probability_matrix = np.zeros(shape=(length_array, length_array), dtype=np.float32)
             for origin, values in self.state_change_proba.items():
                 for destination, prob in values.items():
-                    probability_matrix[origin, destination] = prob
+                    try:
+                        probability_matrix[origin, destination] = prob
+                    except:
+                        pass
             probability_matrix[np.where(probability_matrix == np.nan)] = 0
 
             fig, ax = plt.subplots(1, 1)
@@ -1036,7 +1051,7 @@ class AutomatonV2:
         self.calc_probability()
         import networkx as nx
         custom_cmap = ColorCarrier().make_cmap('green', 'red')
-        nodes = set([n1 for n1, n2 in self.state_changes.keys()]+[n2 for n1, n2 in self.state_changes.keys()])
+        nodes = set([n1 for n1, n2 in self.num_state_changes.keys()] + [n2 for n1, n2 in self.num_state_changes.keys()])
         node_sizes = []
         edge_sizes = []
         node_labels = [str(name) for name in nodes]
@@ -1082,7 +1097,7 @@ class AutomatonV2:
         n_cols = 4
         n_rows = n_plots//4
         if n_plots % 4:
-            n_cols += 1
+            n_rows += 1
 
         duration_fig, ax = plt.subplots(n_rows, n_cols, figsize=(20, 15))
         axes = ax.ravel()
@@ -1093,9 +1108,10 @@ class AutomatonV2:
             kde = self.state_kde[key]
             start, end = value_as_array.min(), value_as_array.max()
             x_grid = np.linspace(start, end, 50)[:, None]
-            curve = np.exp(kde.score_samples(x_grid))
+            curve = np.exp(kde.score_samples(x_grid))  # returns prob density - not log prob density
             axes[plot_counter].plot(curve, label='{}'.format(key), c=ColorCarrier().faps_colors['green'])
-            # sns.distplot(value_as_array, ax=axes[key], rug=False, kde=True, label='State: {}'.format(int(key)))
+            # sns.distplot(value_as_array, ax=axes[plot_counter], rug=False, kde=True,
+            # label='State: {}'.format(int(key)))  TODO for additional histogram ev. remove
             axes[plot_counter].set_xlabel('Timeframe')
             axes[plot_counter].set_ylabel('Prob. Density')
             axes[plot_counter].legend(loc='upper right', fontsize='small')
@@ -1165,8 +1181,8 @@ class AutomatonV2:
         print('--- Checking if state changes valid ---')
 
         state_changes = self._which_transitions(data, train=False)
-        if any(change not in self.state_changes.keys() for change in state_changes):
-            invalid_changes = [change for change in state_changes if change not in self.state_changes.keys()]
+        if any(change not in self.num_state_changes.keys() for change in state_changes):
+            invalid_changes = [change for change in state_changes if change not in self.num_state_changes.keys()]
             print('Unknown transitions: {}'.format(len(invalid_changes)))
             for inv in invalid_changes:
                 print('Unknown transition {}->{} occurred'.format(inv[0], inv[1]))
@@ -1197,28 +1213,36 @@ class AutomatonV2:
         self.check_state_remaining_error(data)
 
 
+# TODO auf fehlende Durchlauefe pruefen ueber utc timestamps - vergleiche ende eines sample mit anfang vom naechsten
+# TODO ecentuell neue Methodik bei Ultrasschall Daten konzipieren
+# TODO Hinweis: datetime.utcfromtimestamp(ts in samples)
 class Splitter:
     """
     Class that splits a .db into samples and saves them as .csv files
     Splitting is based on inactivity for more than 15 seconds detected by a RMS value threshold
     """
-    def __init__(self, sampling_rate=1600):
+    def __init__(self, sampling_rate):
         self.srate = sampling_rate
         self.data_gen = None
         self.marker = None
         self.sample_counter = 0
 
-    def split(self, chunksize, destination_folder, db_path):
+    def split(self, chunksize, destination_folder, db_path, save=True):
         self._read_in_chunks(chunksize, db_path)
-        return self._find_standstill(destination_folder)
+        return self._find_standstill(destination_folder, save=save)
 
     def _read_in_chunks(self, chunksize, db_path):
         connector = sqlite3.connect(db_path)
         self.data_gen = pd.read_sql_query('SELECT * FROM ACC1', connector, chunksize=int(chunksize))
 
-    def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=1.0):
-        window_len = seconds*self.srate
-        #chunk = next(self.data_gen)
+    def _find_standstill(self, destination_folder, seconds=1, axis='y', threshold=1.0, save=True, DOR=1600,
+                         check_for_duration=True):
+        STILLSTAND_NUMBER_OF_WINDOWS_THRESHOLD = 18  # idea only one of these stillstand phases per pump
+        MIN_DURATION = int(218.75 * DOR)
+        MAX_DURATION = int(262.5 * DOR)
+
+        window_len = seconds*self.srate  # length of windows to evaluate
+
         for chunk in self.data_gen:
             x, y, z = chunk['x'], chunk['y'], chunk['z']
             axis_dict = {'x': x, 'y': y, 'z': z}
@@ -1240,7 +1264,7 @@ class Splitter:
                 else:
                     counter = 0
 
-                if counter == 18:
+                if counter == STILLSTAND_NUMBER_OF_WINDOWS_THRESHOLD:
                     print('Standstill detected. Marker appended.')
                     marker.append(start)
 
@@ -1255,7 +1279,7 @@ class Splitter:
                     row_idx_end = marker[count]
                     sample = chunk.iloc[row_idx_start:row_idx_end, :]
 
-                    if int(3.5e5) < len(sample) < int(4.2e5):
+                    if check_for_duration and (MIN_DURATION < len(sample) < MAX_DURATION):
 
                         sample_name = r'sample{}.csv'.format(self.sample_counter)
                         path_to_save = os.path.join(destination_folder, sample_name)
@@ -1263,54 +1287,57 @@ class Splitter:
                         if not os.path.exists(destination_folder):
                             os.makedirs(destination_folder)
 
-                        sample.to_csv(path_to_save)
-                        print('Sample {} saved in {}'.format(self.sample_counter, path_to_save))
-                        self.sample_counter += 1
-                        #yield len(sample)
-
-                        #fig = plt.figure()
-                        #plt.plot(sample['x'])
-                        #plt.show()
+                        if save:
+                            sample.to_csv(path_to_save)
+                            print('Sample {} saved in {}'.format(self.sample_counter, path_to_save))
+                            self.sample_counter += 1
+                            # yield len(sample)  # TODO check if necessary
+                        else:
+                            fig = plt.figure()
+                            plt.plot(sample['x'])
+                            plt.show()
 
 
 if __name__ == '__main__':
-    '''folder = r'D:\MA_data\SensorII_28082018-03092018\shop_floor_test'
-    destination_folder = r'D:\MA_data\SensorII_28082018-03092018\splitted'
 
-    #splitter = Splitter()
-    for i in range(97):
-        db_name = r'shop_floor_test{}.db'.format(i)
-        db_path = os.path.join(folder, db_name)
-        splitter.split(3e6, destination_folder, db_path)'''
+    # folder = r'D:\MA_data\SensorII_151018-171018_8g\shop_floor_test'
+    # destination_folder = r'C:\Users\dokisskalt\PycharmProjects\self_organizing_map'
+    #
+    # splitter = Splitter()
+    # for i in range(97):
+    #     db_name = r'shop_floor_test{}.db'.format(i)
+    #     db_path = os.path.join(folder, db_name)
+    #     splitter.split(3e6, destination_folder, db_path, save=False)
 
-    path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
-    rdc = RawDataConverter(path=path_to_files, axis='y')
-    test_lst = []
-    for i in range(1):
-        file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))
-        data = rdc.read_csv(file_n)
-        test_lst.append(data)
-        print('Cycle {}'.format(i))
+    # path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
+    # rdc = RawDataConverter(path=path_to_files, axis='y')
+    # test_lst = []
+    # for i in range(1):
+    #     file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))
+    #     data = rdc.read_csv(file_n)
+    #     test_lst.append(data)
+    #     print('Cycle {}'.format(i))
+    #
+    # X_train = np.concatenate(test_lst[:])
 
-    X_train = np.concatenate(test_lst[:])
-
-    som1 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='manhattan')
-    som2 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='euclidean')
-    som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
-
-    results = []
-
+    # som1 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='manhattan')
+    # som2 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='euclidean')
+    # som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
+    #
+    # results = []
+    #
     atm = AutomatonV2()
-    for count, som in enumerate([som3]):
-        som.fit(X_train)
-        preds = som.predict_w_umatrix(X_train)
-        atm.train(preds)
-        som.plot_state_dependent_qe()
-        som.plot_cluster_mean_spectrum(4, input_vector=X_train[1000])
-        plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('yellow', 'red'))
-        plt.show()
-        # som.plot_cluster_mean_spectrum(5)
-        atm.plot_time_distribution()
-        atm.plot_state_durations()
-        atm.plot_nx_graph()
-        atm.check([0,1,2,3,4,5])
+    atm.train([0, 1, 2, 1, 2, 3, 1, 3, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
+    # for count, som in enumerate([som3]):
+    # som.fit(X_train)
+    # preds = som.predict_w_umatrix(X_train)
+    # atm.train(preds)
+    # som.plot_state_dependent_qe()
+    # som.plot_cluster_mean_spectrum(4, input_vector=X_train[1000])
+    # plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('yellow', 'red'))
+    # plt.show()
+    # som.plot_cluster_mean_spectrum(5)
+    atm.plot_time_distribution()
+    atm.plot_state_durations()
+    atm.plot_nx_graph()
+    atm.check([0,1,2,3,4,5])
