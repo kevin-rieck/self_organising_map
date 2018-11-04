@@ -669,6 +669,65 @@ class SOM(object):
         plt.show(spectrum_fig)
         return spectrum_fig, axes
 
+    def create_mapping_video(self, input_vectors, file_title,
+                             path_to_ffmpeg=r'C:\Users\Apex\ffmpeg\bin\ffmpeg.exe',
+                             save_ani=False):
+        """
+        creates animation showing which input vector has been mapped where and to which cluster
+        :param file_title: string with title if save_ani, without '.mp4' file extension
+        :param input_vectors: vectors for which to generate the animation
+        :param path_to_ffmpeg: full path to ffmpeg.exe, has to be installed
+        :param save_ani: bool to save the animation as a mp4 vid in same directory
+        :return: None
+        """
+        if not os.path.exists(r'.\videos'):
+            os.mkdir(r'.\videos')
+
+        if self.umatrix is None:
+            self.umatrix = self.get_umatrix()
+
+        plt.rcParams['animation.ffmpeg_path'] = path_to_ffmpeg
+        writer = animation.FFMpegWriter()
+        bmu_coordinates = self._get_bmu(input_vectors)
+        fig = plt.figure(figsize=(20, 10))
+        plt.subplot(2, 2, 1)
+        plt.title('U-Matrix')
+        plt.imshow(self.umatrix, cmap=self.colormap)
+
+        ims = []
+        for i in range(len(bmu_coordinates)):
+            x = bmu_coordinates[i][0]
+            y = bmu_coordinates[i][1]
+            im = plt.scatter(y, x, c='black', edgecolors='white')
+            ims.append([im])
+
+        ani = animation.ArtistAnimation(fig, ims, interval=300, blit=True, repeat_delay=1000)
+        plt.subplot(2, 2, 2)
+        plt.title('Clusters')
+        plt.imshow(self.cluster, cmap=plt.cm.get_cmap('gnuplot', len(np.unique(self.cluster))))
+        ims3 = []
+        for i in range(len(bmu_coordinates)):
+            x = bmu_coordinates[i][0]
+            y = bmu_coordinates[i][1]
+            im = plt.scatter(y, x, c='black', edgecolors='white')
+            ims3.append([im])
+
+        ani3 = animation.ArtistAnimation(fig, ims3, interval=300, blit=True, repeat_delay=1000)
+
+        plt.subplot(2, 1, 2)
+        plt.title('Frequenzbänder aus dem Spectrogram')
+        ims2 = []
+        plt.plot(input_vectors)
+        for j in range(len(input_vectors)):
+            im2 = plt.axvline(x=j, color='black')
+            ims2.append([im2])
+
+        ani2 = animation.ArtistAnimation(fig, ims2, interval=300, blit=True, repeat_delay=1000)
+        if save_ani:
+            ani.save(r'.\videos\{}.mp4'.format(file_title), extra_anim=[ani2, ani3], writer=writer)
+
+        plt.show()
+
     @staticmethod
     def save_figure(fig_id, filename, foldername='images'):
         working_dir = os.getcwd()
@@ -1376,6 +1435,8 @@ if __name__ == '__main__':
     axes[0].plot(som1.last_bmu_qe, c='crimson', ls='dashed', label='QE from prediction', alpha=0.4)
     axes[0].legend()
     plt.show(fig)
+
+    som1.create_mapping_video(X_train, '')
     # som2 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='euclidean')
     # som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
     #
