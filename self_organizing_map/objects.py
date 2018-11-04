@@ -143,6 +143,18 @@ class SOM(object):
             self.bmu_loc = tf.reshape(tf.slice(self._location_vects, slice_input, tf.cast(tf.constant(np.array([1, 2])),
                                                                                           tf.int64)), [2])
 
+            # calculating other metrics for input based on BMU index for QE evaluation <- independent of self.metric
+            self.manhattan_qe = tf.reduce_sum(tf.abs(tf.subtract(self._weightage_vects[bmu_index], self._vect_input)))
+
+            self.euclidean_qe = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(self._weightage_vects[bmu_index],
+                                                                         self._vect_input), 2)))
+
+            # calculating inputs for cosine distance by normalizing 1D tensors
+            cos_input_1 = tf.nn.l2_normalize(self._weightage_vects[bmu_index], 0)
+            cos_input_2 = tf.nn.l2_normalize(self._vect_input, 0)
+            cosine_similarity = tf.reduce_sum(tf.multiply(cos_input_1, cos_input_2))
+            self.cosine_qe = 1.0 - cosine_similarity
+
             if decay == 'exp':
                 # this line will compute the decrease of alpha and sigma as a exponential decay:
                 learning_rate_op = tf.exp(tf.negative((6*self._iter_input)/self._n_iterations))
@@ -354,6 +366,40 @@ class SOM(object):
             self._state_dependent_qe(label_list)
 
         return label_list
+
+    def evaluate_different_qe(self, input_vects, which_qe='manhattan', return_as_nparray=True):
+        """
+        Calculates QE that is different from the one used during training for an array of input vectors
+        :param input_vects: array of input data
+        :param which_qe: string denoting the desired QE type, must be manhattan, euclidean or cosine
+        :param return_as_nparray: whether to return as array, else list
+        :return: either list or array of the wanted QE for each input
+        """
+        if which_qe not in ['manhattan', 'cosine', 'euclidean']:
+            raise ValueError('QE name must be "manhattan", "cosine" or "euclidean"')
+
+        start_time = time.time()
+
+        quantization_error = []
+
+        for vect in input_vects:
+            if which_qe == 'manhattan':
+                qe = self._sess.run(self.manhattan_qe, feed_dict={self._vect_input: vect,
+                                                                  self._iter_input: self._n_iterations})
+            elif which_qe == 'cosine':
+                qe = self._sess.run(self.cosine_qe, feed_dict={self._vect_input: vect,
+                                                               self._iter_input: self._n_iterations})
+            else:
+                qe = self._sess.run(self.euclidean_qe, feed_dict={self._vect_input: vect,
+                                                                  self._iter_input: self._n_iterations})
+
+            quantization_error.append(qe)
+        if return_as_nparray:
+            quantization_error = np.array(quantization_error)
+
+        stop_time = time.time() - start_time
+        print('Dauer = {:.3f} s'.format(stop_time))
+        return quantization_error
 
     # TODO is used for hit histogram and animation -> does not return the states
     def fit_transform(self, input_vects):
@@ -1309,25 +1355,34 @@ if __name__ == '__main__':
     #     db_path = os.path.join(folder, db_name)
     #     splitter.split(3e6, destination_folder, db_path, save=False)
 
-    # path_to_files = r'C:\Users\Apex\Desktop\autem_23_07_18\train_data\samples_sensorII_1600hz'
-    # rdc = RawDataConverter(path=path_to_files, axis='y')
-    # test_lst = []
-    # for i in range(1):
-    #     file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))
-    #     data = rdc.read_csv(file_n)
-    #     test_lst.append(data)
-    #     print('Cycle {}'.format(i))
-    #
-    # X_train = np.concatenate(test_lst[:])
+    path_to_files = r'..\data'
+    rdc = RawDataConverter(path=path_to_files, axis='y')
+    test_lst = []
+    for i in range(1):
+        file_n = os.path.join(path_to_files, 'sample{}.csv'.format(i))
+        data = rdc.read_csv(file_n)
+        test_lst.append(data)
+        print('Cycle {}'.format(i))
 
-    # som1 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='manhattan')
+    X_train = np.concatenate(test_lst[:])
+    som1 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='manhattan')
+    som1.fit(X_train)
+    preds = som1.predict(X_train)
+    fig, axes = plt.subplots(3, 1)
+    for counter, i in enumerate(['manhattan', 'euclidean', 'cosine']):
+        result = som1.evaluate_different_qe(X_train, i)
+        axes[counter].plot(result, label=i+' QE')
+        axes[counter].legend()
+    axes[0].plot(som1.last_bmu_qe, c='crimson', ls='dashed', label='QE from prediction', alpha=0.4)
+    axes[0].legend()
+    plt.show(fig)
     # som2 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=30, alpha=0.3, metric='euclidean')
     # som3 = SOM(m=10, n=5, dim=X_train.shape[1], n_iterations=10, alpha=0.3, metric='cosine')
     #
     # results = []
     #
-    atm = AutomatonV2()
-    atm.train([0, 1, 2, 1, 2, 3, 1, 3, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
+    # atm = AutomatonV2()
+    # atm.train([0, 1, 2, 1, 2, 3, 1, 3, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2])
     # for count, som in enumerate([som3]):
     # som.fit(X_train)
     # preds = som.predict_w_umatrix(X_train)
@@ -1337,7 +1392,7 @@ if __name__ == '__main__':
     # plt.imshow(som.cluster, cmap=ColorCarrier().make_cmap('yellow', 'red'))
     # plt.show()
     # som.plot_cluster_mean_spectrum(5)
-    atm.plot_time_distribution()
-    atm.plot_state_durations()
-    atm.plot_nx_graph()
-    atm.check([0,1,2,3,4,5])
+    # atm.plot_time_distribution()
+    # atm.plot_state_durations()
+    # atm.plot_nx_graph()
+    # atm.check([0,1,2,3,4,5])
